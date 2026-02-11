@@ -173,7 +173,7 @@ function calculateIsDarkMode(sunriseStr, sunsetStr) {
 // Architektur-Hinweis: Mapping nach WMO-Standard (Code-Tabelle 4677).
 // ----------------------------------------
 function mapWeatherCode(code, isNight) {
-    var map = {
+    const map = {
         0:  { icon: isNight ? '🌙' : '☀️',  desc: 'Klar' },
         1:  { icon: isNight ? '🌙' : '🌤️', desc: 'Überwiegend klar' },
         2:  { icon: '⛅',  desc: 'Teilweise bewölkt' },
@@ -208,13 +208,13 @@ function mapWeatherCode(code, isNight) {
 
 // Gibt deutschen Wochentag oder "Heute"/"Morgen" zurück.
 function formatDay(dateStr) {
-    var days = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
-    var date = new Date(dateStr + 'T00:00:00');
-    var today = new Date();
+    const days = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+    const date = new Date(dateStr + 'T00:00:00');
+    const today = new Date();
     today.setHours(0, 0, 0, 0);
-    var tomorrow = new Date(today);
+    const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    var compare = new Date(dateStr + 'T00:00:00');
+    const compare = new Date(dateStr + 'T00:00:00');
     compare.setHours(0, 0, 0, 0);
     if (compare.getTime() === today.getTime()) return 'Heute';
     if (compare.getTime() === tomorrow.getTime()) return 'Morgen';
@@ -224,7 +224,7 @@ function formatDay(dateStr) {
 // Extrahiert Uhrzeit (HH:MM) aus ISO-String.
 function formatTime(isoStr) {
     if (!isoStr) return '—';
-    var d = new Date(isoStr);
+    const d = new Date(isoStr);
     return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 }
 
@@ -235,7 +235,7 @@ function formatTime(isoStr) {
 // Jede Mutation MUSS unmittelbar updateUI() auslösen.
 // ========================================
 
-var state = {
+const state = {
     latitude: null,
     longitude: null,
     cityName: '',
@@ -262,7 +262,7 @@ var state = {
 // Kein verstreutes getElementById im restlichen Code.
 // ========================================
 
-var $ = {};
+let $ = {};
 
 // ----------------------------------------
 // Funktion: cacheDom
@@ -326,8 +326,8 @@ function setLocation(lat, lon, name) {
 // Architektur-Hinweis: Berechnet isDarkMode via Helper-Funktion.
 // ----------------------------------------
 function setWeatherData(data) {
-    var current = data.current;
-    var daily = data.daily;
+    const current = data.current;
+    const daily = data.daily;
 
     state.currentTemp = Math.round(current.temperature_2m);
     state.currentWeatherCode = current.weather_code;
@@ -340,7 +340,7 @@ function setWeatherData(data) {
     state.isDarkMode = calculateIsDarkMode(state.sunrise, state.sunset);
 
     state.forecast = [];
-    for (var i = 0; i < daily.time.length; i++) {
+    for (let i = 0; i < daily.time.length; i++) {
         state.forecast.push({
             date: daily.time[i],
             tempMax: Math.round(daily.temperature_2m_max[i]),
@@ -453,7 +453,7 @@ function updateHeader() {
 // ----------------------------------------
 function updateCurrentWeather() {
     if (state.currentTemp === null) return;
-    var weather = mapWeatherCode(state.currentWeatherCode, state.isDarkMode);
+    const weather = mapWeatherCode(state.currentWeatherCode, state.isDarkMode);
     $.weatherIcon.textContent = weather.icon;
     $.currentTemp.textContent = state.currentTemp + '°';
     $.weatherDesc.textContent = weather.desc;
@@ -496,38 +496,38 @@ function updateSunTimes() {
 function updateForecastList() {
     if (state.forecast.length === 0) return;
 
-    var items = [];
+    const items = [];
 
-    for (var i = 0; i < state.forecast.length; i++) {
-        var day = state.forecast[i];
-        var weather = mapWeatherCode(day.weatherCode, false);
+    for (let i = 0; i < state.forecast.length; i++) {
+        const day = state.forecast[i];
+        const weather = mapWeatherCode(day.weatherCode, false);
 
-        var row = document.createElement('div');
+        const row = document.createElement('div');
         row.classList.add('flex', 'items-center', 'justify-between', 'py-3');
 
-        var dayLabel = document.createElement('span');
+        const dayLabel = document.createElement('span');
         dayLabel.classList.add('w-16', 'text-sm', 'font-medium');
         dayLabel.textContent = formatDay(day.date);
 
-        var icon = document.createElement('span');
+        const icon = document.createElement('span');
         icon.classList.add('text-2xl', 'w-10', 'text-center');
         icon.textContent = weather.icon;
 
-        var rain = document.createElement('span');
+        const rain = document.createElement('span');
         rain.classList.add('text-xs', 'text-blue-200', 'w-12', 'text-center');
         rain.textContent = day.rainProbability + '%';
 
-        var temps = document.createElement('span');
+        const temps = document.createElement('span');
         temps.classList.add('text-sm', 'text-right', 'w-24');
 
-        var tempMin = document.createElement('span');
+        const tempMin = document.createElement('span');
         tempMin.classList.add('opacity-50');
         tempMin.textContent = day.tempMin + '°';
 
-        var spacer = document.createElement('span');
+        const spacer = document.createElement('span');
         spacer.textContent = '  ';
 
-        var tempMax = document.createElement('span');
+        const tempMax = document.createElement('span');
         tempMax.classList.add('font-semibold');
         tempMax.textContent = day.tempMax + '°';
 
@@ -584,7 +584,7 @@ function updateErrorDisplay() {
 // ----------------------------------------
 function updateCityOverlay() {
     if (state.showCityInput) {
-        var wasHidden = $.cityOverlay.classList.contains('hidden');
+        const wasHidden = $.cityOverlay.classList.contains('hidden');
         $.cityOverlay.classList.remove('hidden');
         if (wasHidden) {
             $.cityInput.value = '';
@@ -646,7 +646,7 @@ function handleCityInput(e) {
 // Verändert NICHT: DOM
 // ----------------------------------------
 function handleCitySubmit() {
-    var query = state.cityInputValue.trim();
+    const query = state.cityInputValue.trim();
     if (!query) return;
     state.showCityInput = false;
     state.cityInputValue = '';
@@ -722,7 +722,7 @@ function detectLocation() {
 async function fetchWeather() {
     setLoading(true);
 
-    var url = 'https://api.open-meteo.com/v1/forecast'
+    const url = 'https://api.open-meteo.com/v1/forecast'
         + '?latitude=' + state.latitude
         + '&longitude=' + state.longitude
         + '&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m'
@@ -731,9 +731,9 @@ async function fetchWeather() {
         + '&forecast_days=10';
 
     try {
-        var response = await fetch(url);
+        const response = await fetch(url);
         if (!response.ok) throw new Error('HTTP ' + response.status);
-        var data = await response.json();
+        const data = await response.json();
         setWeatherData(data);
     } catch (err) {
         setError('Wetterdaten konnten nicht geladen werden.');
@@ -750,23 +750,23 @@ async function fetchWeather() {
 async function searchCity(query) {
     setLoading(true);
 
-    var url = 'https://geocoding-api.open-meteo.com/v1/search'
+    const url = 'https://geocoding-api.open-meteo.com/v1/search'
         + '?name=' + encodeURIComponent(query)
         + '&count=1'
         + '&language=de'
         + '&format=json';
 
     try {
-        var response = await fetch(url);
+        const response = await fetch(url);
         if (!response.ok) throw new Error('HTTP ' + response.status);
-        var data = await response.json();
+        const data = await response.json();
 
         if (!data.results || data.results.length === 0) {
             setError('Stadt „' + query + '" wurde nicht gefunden.');
             return;
         }
 
-        var result = data.results[0];
+        const result = data.results[0];
         setLocation(result.latitude, result.longitude, result.name);
         fetchWeather();
     } catch (err) {
