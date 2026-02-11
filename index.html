@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Wetter">
+    <meta name="theme-color" content="#0ea5e9">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌤️</text></svg>">
+    <title>Wetter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            transition: background 0.5s ease;
+            -webkit-tap-highlight-color: transparent;
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        body.theme-light {
+            background: linear-gradient(180deg, #38bdf8 0%, #2563eb 100%);
+        }
+        body.theme-dark {
+            background: linear-gradient(180deg, #0f172a 0%, #1e1b4b 100%);
+        }
+        .glass {
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .spinner {
+            animation: spin 1s linear infinite;
+        }
+    </style>
+</head>
+<body class="theme-light min-h-screen text-white font-sans">
+
+    <!-- ========================================
+         HAUPTBEREICH
+         Komplettes Layout statisch im HTML.
+         Keine Layout-Erzeugung im Script.
+         Alle dynamischen Bereiche mit eindeutigen IDs.
+         ======================================== -->
+    <main id="app" class="min-h-screen p-5 pt-14 pb-10 max-w-md mx-auto select-none">
+
+        <!-- Header: Stadtname + Steuerung -->
+        <header id="header" class="text-center mb-8 relative">
+            <button id="refresh-btn"
+                    class="absolute top-0 left-0 text-white/70 text-2xl w-10 h-10 flex items-center justify-center rounded-full active:bg-white/10"
+                    aria-label="Aktualisieren">
+                ↻
+            </button>
+            <button id="city-toggle-btn"
+                    class="inline-flex items-center gap-1"
+                    aria-label="Stadt wechseln">
+                <span id="city-name" class="text-lg font-medium tracking-wide">—</span>
+                <svg class="w-4 h-4 opacity-60" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                </svg>
+            </button>
+        </header>
+
+        <!-- Aktuelles Wetter -->
+        <section id="current-weather" class="text-center mb-10">
+            <div id="weather-icon" class="text-8xl mb-2 leading-none">—</div>
+            <div id="current-temp" class="text-8xl font-extralight tracking-tighter mb-1">—</div>
+            <div id="weather-desc" class="text-lg opacity-80 mb-1">—</div>
+            <div id="apparent-temp" class="text-sm opacity-60">—</div>
+        </section>
+
+        <!-- Detail-Karten: Wind, Feuchtigkeit, Regen -->
+        <section id="details" class="grid grid-cols-3 gap-3 mb-5">
+            <div class="glass rounded-2xl p-3 text-center">
+                <div class="text-xs opacity-60 uppercase tracking-wider mb-1">Wind</div>
+                <div id="wind-speed" class="text-xl font-semibold">—</div>
+            </div>
+            <div class="glass rounded-2xl p-3 text-center">
+                <div class="text-xs opacity-60 uppercase tracking-wider mb-1">Feuchte</div>
+                <div id="humidity" class="text-xl font-semibold">—</div>
+            </div>
+            <div class="glass rounded-2xl p-3 text-center">
+                <div class="text-xs opacity-60 uppercase tracking-wider mb-1">Regen</div>
+                <div id="rain-probability" class="text-xl font-semibold">—</div>
+            </div>
+        </section>
+
+        <!-- Sonnenzeiten -->
+        <section id="sun-times" class="glass rounded-2xl p-4 mb-5 flex justify-around">
+            <div class="text-center">
+                <div class="text-xs opacity-60 uppercase tracking-wider mb-1">☀ Aufgang</div>
+                <div id="sunrise" class="text-xl font-semibold">—</div>
+            </div>
+            <div class="w-px bg-white/20"></div>
+            <div class="text-center">
+                <div class="text-xs opacity-60 uppercase tracking-wider mb-1">☽ Untergang</div>
+                <div id="sunset" class="text-xl font-semibold">—</div>
+            </div>
+        </section>
+
+        <!-- 10-Tage-Vorhersage -->
+        <section id="forecast" class="glass rounded-2xl p-4">
+            <h2 class="text-xs opacity-60 uppercase tracking-wider mb-3">10-Tage-Vorhersage</h2>
+            <div id="forecast-list" class="divide-y divide-white/10"></div>
+        </section>
+
+    </main>
+
+    <!-- Stadteingabe-Overlay -->
+    <div id="city-overlay" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-start justify-center pt-28 px-5">
+        <div class="bg-slate-800/95 backdrop-blur-lg rounded-2xl p-5 w-full max-w-sm shadow-2xl">
+            <h3 class="text-white text-lg font-semibold mb-4">Stadt suchen</h3>
+            <input id="city-input"
+                   type="text"
+                   class="w-full bg-slate-700/80 text-white rounded-xl px-4 py-3 mb-4 outline-none focus:ring-2 focus:ring-blue-400 placeholder-white/40"
+                   placeholder="Stadtname eingeben…"
+                   autocomplete="off" />
+            <div class="flex gap-3">
+                <button id="city-cancel-btn"
+                        class="flex-1 bg-slate-700 text-white/80 rounded-xl py-3 font-medium active:bg-slate-600">
+                    Abbrechen
+                </button>
+                <button id="city-submit-btn"
+                        class="flex-1 bg-blue-500 text-white rounded-xl py-3 font-medium active:bg-blue-600">
+                    Suchen
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lade-Overlay -->
+    <div id="loading-overlay" class="hidden fixed inset-0 bg-black/20 backdrop-blur-sm z-40 flex items-center justify-center">
+        <div class="flex flex-col items-center gap-3">
+            <div class="w-10 h-10 border-white/30 border-t-white rounded-full spinner" style="border-width: 3px; border-style: solid"></div>
+            <span class="text-white/80 text-sm">Wetterdaten laden…</span>
+        </div>
+    </div>
+
+    <!-- Fehlermeldung -->
+    <div id="error-display" class="hidden fixed bottom-6 left-4 right-4 bg-red-500/90 backdrop-blur text-white rounded-2xl p-4 text-center text-sm z-50 shadow-lg max-w-md mx-auto"></div>
+
+
+<script>
+'use strict';
+
+// ========================================
+// HELPER-FUNKTIONEN
+// Reine Berechnungen. Kein State. Kein DOM.
+// ========================================
+
+// ----------------------------------------
+// Funktion: calculateIsDarkMode
+// Verantwortlichkeit: Prüft ob aktuelle Uhrzeit nach Sonnenuntergang oder vor Sonnenaufgang liegt.
+// Verändert: Nichts (pure Funktion)
+// Verändert NICHT: state, DOM
+// Architektur-Hinweis: Ergebnis wird vom Aufrufer in state.isDarkMode geschrieben.
+// ----------------------------------------
+function calculateIsDarkMode(sunriseStr, sunsetStr) {
+    if (!sunriseStr || !sunsetStr) return false;
+    const now = new Date();
+    const sunrise = new Date(sunriseStr);
+    const sunset = new Date(sunsetStr);
+    return now < sunrise || now >= sunset;
+}
+
+// ----------------------------------------
+// Funktion: mapWeatherCode
+// Verantwortlichkeit: Übersetzt WMO Weather Code in Icon (Emoji) und deutsche Beschreibung.
+// Verändert: Nichts (pure Funktion)
+// Verändert NICHT: state, DOM
+// Architektur-Hinweis: Mapping nach WMO-Standard (Code-Tabelle 4677).
+// ----------------------------------------
+function mapWeatherCode(code, isNight) {
+    var map = {
+        0:  { icon: isNight ? '🌙' : '☀️',  desc: 'Klar' },
+        1:  { icon: isNight ? '🌙' : '🌤️', desc: 'Überwiegend klar' },
+        2:  { icon: '⛅',  desc: 'Teilweise bewölkt' },
+        3:  { icon: '☁️',  desc: 'Bewölkt' },
+        45: { icon: '🌫️', desc: 'Nebel' },
+        48: { icon: '🌫️', desc: 'Reifnebel' },
+        51: { icon: '🌦️', desc: 'Leichter Nieselregen' },
+        53: { icon: '🌦️', desc: 'Nieselregen' },
+        55: { icon: '🌧️', desc: 'Starker Nieselregen' },
+        56: { icon: '🌧️', desc: 'Gefrierender Nieselregen' },
+        57: { icon: '🌧️', desc: 'Starker gefr. Nieselregen' },
+        61: { icon: '🌧️', desc: 'Leichter Regen' },
+        63: { icon: '🌧️', desc: 'Regen' },
+        65: { icon: '🌧️', desc: 'Starker Regen' },
+        66: { icon: '🌧️', desc: 'Gefrierender Regen' },
+        67: { icon: '🌧️', desc: 'Starker gefr. Regen' },
+        71: { icon: '🌨️', desc: 'Leichter Schneefall' },
+        73: { icon: '🌨️', desc: 'Schneefall' },
+        75: { icon: '❄️',  desc: 'Starker Schneefall' },
+        77: { icon: '❄️',  desc: 'Schneekörner' },
+        80: { icon: '🌦️', desc: 'Leichte Regenschauer' },
+        81: { icon: '🌧️', desc: 'Regenschauer' },
+        82: { icon: '🌧️', desc: 'Heftige Regenschauer' },
+        85: { icon: '🌨️', desc: 'Leichte Schneeschauer' },
+        86: { icon: '🌨️', desc: 'Starke Schneeschauer' },
+        95: { icon: '⛈️', desc: 'Gewitter' },
+        96: { icon: '⛈️', desc: 'Gewitter mit Hagel' },
+        99: { icon: '⛈️', desc: 'Starkes Gewitter mit Hagel' }
+    };
+    return map[code] || { icon: '❓', desc: 'Unbekannt' };
+}
+
+// Gibt deutschen Wochentag oder "Heute"/"Morgen" zurück.
+function formatDay(dateStr) {
+    var days = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+    var date = new Date(dateStr + 'T00:00:00');
+    var today = new Date();
+    today.setHours(0, 0, 0, 0);
+    var tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    var compare = new Date(dateStr + 'T00:00:00');
+    compare.setHours(0, 0, 0, 0);
+    if (compare.getTime() === today.getTime()) return 'Heute';
+    if (compare.getTime() === tomorrow.getTime()) return 'Morgen';
+    return days[date.getDay()];
+}
+
+// Extrahiert Uhrzeit (HH:MM) aus ISO-String.
+function formatTime(isoStr) {
+    if (!isoStr) return '—';
+    var d = new Date(isoStr);
+    return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+}
+
+
+// ========================================
+// STATE
+// Zentrales, direkt mutierbares Zustandsobjekt.
+// Jede Mutation MUSS unmittelbar updateUI() auslösen.
+// ========================================
+
+var state = {
+    latitude: null,
+    longitude: null,
+    cityName: '',
+    currentTemp: null,
+    currentWeatherCode: null,
+    humidity: null,
+    windSpeed: null,
+    apparentTemp: null,
+    sunrise: '',
+    sunset: '',
+    rainProbabilityToday: null,
+    forecast: [],
+    isDarkMode: false,
+    isLoading: false,
+    error: null,
+    showCityInput: false,
+    cityInputValue: ''
+};
+
+
+// ========================================
+// DOM-CACHE
+// Einmaliges Caching aller benötigten Elemente.
+// Kein verstreutes getElementById im restlichen Code.
+// ========================================
+
+var $ = {};
+
+// ----------------------------------------
+// Funktion: cacheDom
+// Verantwortlichkeit: Cached alle DOM-Referenzen in das $-Objekt.
+// Verändert: $ (DOM-Cache-Objekt)
+// Verändert NICHT: state
+// Architektur-Hinweis: Wird genau einmal zu Beginn des Lifecycle aufgerufen.
+// ----------------------------------------
+function cacheDom() {
+    $ = {
+        body:            document.body,
+        cityName:        document.getElementById('city-name'),
+        cityToggleBtn:   document.getElementById('city-toggle-btn'),
+        refreshBtn:      document.getElementById('refresh-btn'),
+        weatherIcon:     document.getElementById('weather-icon'),
+        currentTemp:     document.getElementById('current-temp'),
+        weatherDesc:     document.getElementById('weather-desc'),
+        apparentTemp:    document.getElementById('apparent-temp'),
+        windSpeed:       document.getElementById('wind-speed'),
+        humidity:        document.getElementById('humidity'),
+        rainProbability: document.getElementById('rain-probability'),
+        sunrise:         document.getElementById('sunrise'),
+        sunset:          document.getElementById('sunset'),
+        forecastList:    document.getElementById('forecast-list'),
+        cityOverlay:     document.getElementById('city-overlay'),
+        cityInput:       document.getElementById('city-input'),
+        citySubmitBtn:   document.getElementById('city-submit-btn'),
+        cityCancelBtn:   document.getElementById('city-cancel-btn'),
+        loadingOverlay:  document.getElementById('loading-overlay'),
+        errorDisplay:    document.getElementById('error-display')
+    };
+}
+
+
+// ========================================
+// STATE-MUTATIONS-FUNKTIONEN
+// Verändern ausschließlich state.
+// Rufen danach immer updateUI() auf.
+// Kein DOM-Zugriff.
+// ========================================
+
+// ----------------------------------------
+// Funktion: setLocation
+// Verantwortlichkeit: Schreibt Standortdaten in state.
+// Verändert: state.latitude, state.longitude, state.cityName
+// Verändert NICHT: DOM
+// Architektur-Hinweis: Wird nach GPS-Erkennung oder Stadtsuche aufgerufen.
+// ----------------------------------------
+function setLocation(lat, lon, name) {
+    state.latitude = lat;
+    state.longitude = lon;
+    state.cityName = name;
+    updateUI();
+}
+
+// ----------------------------------------
+// Funktion: setWeatherData
+// Verantwortlichkeit: Parst die API-Antwort und schreibt alle Wetterdaten in state.
+// Verändert: state (alle Wetterfelder, forecast-Array, isDarkMode)
+// Verändert NICHT: DOM
+// Architektur-Hinweis: Berechnet isDarkMode via Helper-Funktion.
+// ----------------------------------------
+function setWeatherData(data) {
+    var current = data.current;
+    var daily = data.daily;
+
+    state.currentTemp = Math.round(current.temperature_2m);
+    state.currentWeatherCode = current.weather_code;
+    state.humidity = current.relative_humidity_2m;
+    state.windSpeed = Math.round(current.wind_speed_10m);
+    state.apparentTemp = Math.round(current.apparent_temperature);
+    state.sunrise = daily.sunrise[0];
+    state.sunset = daily.sunset[0];
+    state.rainProbabilityToday = daily.precipitation_probability_max[0];
+    state.isDarkMode = calculateIsDarkMode(state.sunrise, state.sunset);
+
+    state.forecast = [];
+    for (var i = 0; i < daily.time.length; i++) {
+        state.forecast.push({
+            date: daily.time[i],
+            tempMax: Math.round(daily.temperature_2m_max[i]),
+            tempMin: Math.round(daily.temperature_2m_min[i]),
+            weatherCode: daily.weather_code[i],
+            rainProbability: daily.precipitation_probability_max[i],
+            windSpeed: Math.round(daily.wind_speed_10m_max[i])
+        });
+    }
+
+    state.isLoading = false;
+    state.error = null;
+    updateUI();
+}
+
+// ----------------------------------------
+// Funktion: setError
+// Verantwortlichkeit: Setzt eine Fehlermeldung in state und plant deren Ausblendung.
+// Verändert: state.error, state.isLoading
+// Verändert NICHT: DOM
+// Architektur-Hinweis: Fehler werden ausschließlich über state.error transportiert.
+// ----------------------------------------
+function setError(msg) {
+    state.error = msg;
+    state.isLoading = false;
+    updateUI();
+    setTimeout(clearError, 5000);
+}
+
+// ----------------------------------------
+// Funktion: clearError
+// Verantwortlichkeit: Entfernt die Fehlermeldung aus state.
+// Verändert: state.error
+// Verändert NICHT: DOM
+// ----------------------------------------
+function clearError() {
+    state.error = null;
+    updateUI();
+}
+
+// ----------------------------------------
+// Funktion: setLoading
+// Verantwortlichkeit: Setzt den Ladezustand.
+// Verändert: state.isLoading
+// Verändert NICHT: DOM
+// ----------------------------------------
+function setLoading(val) {
+    state.isLoading = val;
+    updateUI();
+}
+
+
+// ========================================
+// UPDATE-FUNKTIONEN
+// Lesen ausschließlich state, schreiben ausschließlich DOM.
+// Keine State-Mutation. Keine Berechnungen.
+// Jede Funktion hat exakt eine Verantwortlichkeit.
+// ========================================
+
+// ----------------------------------------
+// Funktion: updateUI
+// Verantwortlichkeit: Zentrale Update-Funktion – ruft ALLE Teil-Updates auf.
+// Verändert: DOM (via Teil-Update-Funktionen)
+// Verändert NICHT: state
+// Architektur-Hinweis: Einziger Einstiegspunkt für alle DOM-Aktualisierungen.
+// ----------------------------------------
+function updateUI() {
+    updateTheme();
+    updateHeader();
+    updateCurrentWeather();
+    updateDetails();
+    updateSunTimes();
+    updateForecastList();
+    updateLoadingState();
+    updateErrorDisplay();
+    updateCityOverlay();
+}
+
+// ----------------------------------------
+// Funktion: updateTheme
+// Verantwortlichkeit: Schaltet Dark/Light-Klassen auf dem body-Element.
+// Verändert: DOM (body classList)
+// Verändert NICHT: state
+// ----------------------------------------
+function updateTheme() {
+    if (state.isDarkMode) {
+        $.body.classList.add('theme-dark');
+        $.body.classList.remove('theme-light');
+    } else {
+        $.body.classList.add('theme-light');
+        $.body.classList.remove('theme-dark');
+    }
+}
+
+// ----------------------------------------
+// Funktion: updateHeader
+// Verantwortlichkeit: Zeigt den aktuellen Stadtnamen an.
+// Verändert: DOM (city-name textContent)
+// Verändert NICHT: state
+// ----------------------------------------
+function updateHeader() {
+    $.cityName.textContent = state.cityName || 'Standort wird ermittelt…';
+}
+
+// ----------------------------------------
+// Funktion: updateCurrentWeather
+// Verantwortlichkeit: Zeigt aktuelle Temperatur, Icon und Beschreibung an.
+// Verändert: DOM (weather-icon, current-temp, weather-desc, apparent-temp)
+// Verändert NICHT: state
+// ----------------------------------------
+function updateCurrentWeather() {
+    if (state.currentTemp === null) return;
+    var weather = mapWeatherCode(state.currentWeatherCode, state.isDarkMode);
+    $.weatherIcon.textContent = weather.icon;
+    $.currentTemp.textContent = state.currentTemp + '°';
+    $.weatherDesc.textContent = weather.desc;
+    $.apparentTemp.textContent = 'Gefühlt ' + state.apparentTemp + '°';
+}
+
+// ----------------------------------------
+// Funktion: updateDetails
+// Verantwortlichkeit: Zeigt Wind, Luftfeuchtigkeit und Regenwahrscheinlichkeit.
+// Verändert: DOM (wind-speed, humidity, rain-probability)
+// Verändert NICHT: state
+// ----------------------------------------
+function updateDetails() {
+    if (state.windSpeed === null) return;
+    $.windSpeed.textContent = state.windSpeed + ' km/h';
+    $.humidity.textContent = state.humidity + '%';
+    $.rainProbability.textContent = state.rainProbabilityToday !== null
+        ? state.rainProbabilityToday + '%'
+        : '—';
+}
+
+// ----------------------------------------
+// Funktion: updateSunTimes
+// Verantwortlichkeit: Zeigt Sonnenaufgangs- und Sonnenuntergangszeit an.
+// Verändert: DOM (sunrise, sunset)
+// Verändert NICHT: state
+// ----------------------------------------
+function updateSunTimes() {
+    $.sunrise.textContent = formatTime(state.sunrise);
+    $.sunset.textContent = formatTime(state.sunset);
+}
+
+// ----------------------------------------
+// Funktion: updateForecastList
+// Verantwortlichkeit: Erzeugt die 10-Tage-Vorhersage-Zeilen per createElement + replaceChildren.
+// Verändert: DOM (forecast-list Kindelemente)
+// Verändert NICHT: state
+// Architektur-Hinweis: Kein innerHTML. Kein Template-String-Rendering. Ausschließlich createElement.
+// ----------------------------------------
+function updateForecastList() {
+    if (state.forecast.length === 0) return;
+
+    var items = [];
+
+    for (var i = 0; i < state.forecast.length; i++) {
+        var day = state.forecast[i];
+        var weather = mapWeatherCode(day.weatherCode, false);
+
+        var row = document.createElement('div');
+        row.classList.add('flex', 'items-center', 'justify-between', 'py-3');
+
+        var dayLabel = document.createElement('span');
+        dayLabel.classList.add('w-16', 'text-sm', 'font-medium');
+        dayLabel.textContent = formatDay(day.date);
+
+        var icon = document.createElement('span');
+        icon.classList.add('text-2xl', 'w-10', 'text-center');
+        icon.textContent = weather.icon;
+
+        var rain = document.createElement('span');
+        rain.classList.add('text-xs', 'text-blue-200', 'w-12', 'text-center');
+        rain.textContent = day.rainProbability + '%';
+
+        var temps = document.createElement('span');
+        temps.classList.add('text-sm', 'text-right', 'w-24');
+
+        var tempMin = document.createElement('span');
+        tempMin.classList.add('opacity-50');
+        tempMin.textContent = day.tempMin + '°';
+
+        var spacer = document.createElement('span');
+        spacer.textContent = '  ';
+
+        var tempMax = document.createElement('span');
+        tempMax.classList.add('font-semibold');
+        tempMax.textContent = day.tempMax + '°';
+
+        temps.appendChild(tempMin);
+        temps.appendChild(spacer);
+        temps.appendChild(tempMax);
+
+        row.appendChild(dayLabel);
+        row.appendChild(icon);
+        row.appendChild(rain);
+        row.appendChild(temps);
+
+        items.push(row);
+    }
+
+    $.forecastList.replaceChildren.apply($.forecastList, items);
+}
+
+// ----------------------------------------
+// Funktion: updateLoadingState
+// Verantwortlichkeit: Zeigt oder verbirgt das Lade-Overlay.
+// Verändert: DOM (loading-overlay classList)
+// Verändert NICHT: state
+// ----------------------------------------
+function updateLoadingState() {
+    if (state.isLoading) {
+        $.loadingOverlay.classList.remove('hidden');
+    } else {
+        $.loadingOverlay.classList.add('hidden');
+    }
+}
+
+// ----------------------------------------
+// Funktion: updateErrorDisplay
+// Verantwortlichkeit: Zeigt oder verbirgt die Fehlermeldung.
+// Verändert: DOM (error-display classList, textContent)
+// Verändert NICHT: state
+// ----------------------------------------
+function updateErrorDisplay() {
+    if (state.error) {
+        $.errorDisplay.textContent = state.error;
+        $.errorDisplay.classList.remove('hidden');
+    } else {
+        $.errorDisplay.classList.add('hidden');
+    }
+}
+
+// ----------------------------------------
+// Funktion: updateCityOverlay
+// Verantwortlichkeit: Zeigt oder verbirgt das Stadteingabe-Overlay. Fokussiert Input beim Öffnen.
+// Verändert: DOM (city-overlay classList, city-input focus/value)
+// Verändert NICHT: state
+// Architektur-Hinweis: Prüft classList, um Fokus nur beim erstmaligen Öffnen zu setzen.
+// ----------------------------------------
+function updateCityOverlay() {
+    if (state.showCityInput) {
+        var wasHidden = $.cityOverlay.classList.contains('hidden');
+        $.cityOverlay.classList.remove('hidden');
+        if (wasHidden) {
+            $.cityInput.value = '';
+            $.cityInput.focus();
+        }
+    } else {
+        $.cityOverlay.classList.add('hidden');
+    }
+}
+
+
+// ========================================
+// EVENT-HANDLER
+// Verändern ausschließlich state → updateUI().
+// Kein DOM-Zugriff in Event-Handlern.
+// Nur benannte Funktionen. Keine anonymen Handler.
+// ========================================
+
+// ----------------------------------------
+// Funktion: handleToggleCity
+// Verantwortlichkeit: Öffnet das Stadteingabe-Overlay.
+// Verändert: state.showCityInput, state.cityInputValue
+// Verändert NICHT: DOM
+// ----------------------------------------
+function handleToggleCity() {
+    state.showCityInput = true;
+    state.cityInputValue = '';
+    updateUI();
+}
+
+// ----------------------------------------
+// Funktion: handleCancelCity
+// Verantwortlichkeit: Schließt das Stadteingabe-Overlay.
+// Verändert: state.showCityInput, state.cityInputValue
+// Verändert NICHT: DOM
+// ----------------------------------------
+function handleCancelCity() {
+    state.showCityInput = false;
+    state.cityInputValue = '';
+    updateUI();
+}
+
+// ----------------------------------------
+// Funktion: handleCityInput
+// Verantwortlichkeit: Synchronisiert den Eingabewert in den State.
+// Verändert: state.cityInputValue
+// Verändert NICHT: DOM
+// Architektur-Hinweis: Liest den Wert aus dem Event-Objekt (e.target.value).
+// ----------------------------------------
+function handleCityInput(e) {
+    state.cityInputValue = e.target.value;
+    updateUI();
+}
+
+// ----------------------------------------
+// Funktion: handleCitySubmit
+// Verantwortlichkeit: Löst die Stadtsuche mit dem aktuellen Eingabewert aus.
+// Verändert: state.showCityInput, state.cityInputValue
+// Verändert NICHT: DOM
+// ----------------------------------------
+function handleCitySubmit() {
+    var query = state.cityInputValue.trim();
+    if (!query) return;
+    state.showCityInput = false;
+    state.cityInputValue = '';
+    updateUI();
+    searchCity(query);
+}
+
+// ----------------------------------------
+// Funktion: handleCityKeydown
+// Verantwortlichkeit: Reagiert auf Enter-Taste im Stadteingabe-Feld.
+// Verändert: state (delegiert an handleCitySubmit)
+// Verändert NICHT: DOM
+// ----------------------------------------
+function handleCityKeydown(e) {
+    if (e.key === 'Enter') {
+        handleCitySubmit();
+    }
+}
+
+// ----------------------------------------
+// Funktion: handleRefresh
+// Verantwortlichkeit: Löst einen erneuten Wetter-Fetch aus.
+// Verändert: Nichts direkt (delegiert an fetchWeather)
+// Verändert NICHT: DOM
+// ----------------------------------------
+function handleRefresh() {
+    if (state.latitude !== null && state.longitude !== null) {
+        fetchWeather();
+    }
+}
+
+
+// ========================================
+// ASYNC / SIDE-EFFECTS
+// Verändern ausschließlich state → updateUI().
+// Kein DOM-Zugriff. Fehler laufen über state.error.
+// ========================================
+
+// ----------------------------------------
+// Funktion: detectLocation
+// Verantwortlichkeit: Ermittelt die GPS-Koordinaten des Nutzers.
+// Verändert: state (via setLocation, setError, setLoading)
+// Verändert NICHT: DOM
+// Architektur-Hinweis: Erster Side-Effect im Lifecycle. Löst bei Erfolg fetchWeather() aus.
+// ----------------------------------------
+function detectLocation() {
+    setLoading(true);
+
+    if (!navigator.geolocation) {
+        setError('Geolocation wird von diesem Browser nicht unterstützt.');
+        return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+        function onGpsSuccess(position) {
+            setLocation(position.coords.latitude, position.coords.longitude, 'Mein Standort');
+            fetchWeather();
+        },
+        function onGpsError() {
+            setError('Standort konnte nicht ermittelt werden. Bitte Stadt manuell eingeben.');
+        },
+        { enableHighAccuracy: false, timeout: 10000 }
+    );
+}
+
+// ----------------------------------------
+// Funktion: fetchWeather
+// Verantwortlichkeit: Ruft die Open-Meteo Forecast API ab und schreibt die Daten in state.
+// Verändert: state (via setWeatherData, setError, setLoading)
+// Verändert NICHT: DOM
+// Architektur-Hinweis: Kein Caching – jeder Aufruf ist ein frischer Fetch.
+// ----------------------------------------
+async function fetchWeather() {
+    setLoading(true);
+
+    var url = 'https://api.open-meteo.com/v1/forecast'
+        + '?latitude=' + state.latitude
+        + '&longitude=' + state.longitude
+        + '&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m'
+        + '&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max,wind_speed_10m_max'
+        + '&timezone=auto'
+        + '&forecast_days=10';
+
+    try {
+        var response = await fetch(url);
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        var data = await response.json();
+        setWeatherData(data);
+    } catch (err) {
+        setError('Wetterdaten konnten nicht geladen werden.');
+    }
+}
+
+// ----------------------------------------
+// Funktion: searchCity
+// Verantwortlichkeit: Sucht eine Stadt über die Open-Meteo Geocoding API.
+// Verändert: state (via setLocation, setError, setLoading)
+// Verändert NICHT: DOM
+// Architektur-Hinweis: Bei Erfolg wird automatisch fetchWeather() ausgelöst.
+// ----------------------------------------
+async function searchCity(query) {
+    setLoading(true);
+
+    var url = 'https://geocoding-api.open-meteo.com/v1/search'
+        + '?name=' + encodeURIComponent(query)
+        + '&count=1'
+        + '&language=de'
+        + '&format=json';
+
+    try {
+        var response = await fetch(url);
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        var data = await response.json();
+
+        if (!data.results || data.results.length === 0) {
+            setError('Stadt „' + query + '" wurde nicht gefunden.');
+            return;
+        }
+
+        var result = data.results[0];
+        setLocation(result.latitude, result.longitude, result.name);
+        fetchWeather();
+    } catch (err) {
+        setError('Stadtsuche fehlgeschlagen.');
+    }
+}
+
+
+// ========================================
+// LIFECYCLE
+// Zwingende Reihenfolge:
+// 1. DOM cachen
+// 2. Events binden
+// 3. State initialisieren
+// 4. UI aktualisieren
+// 5. Side-Effects starten (GPS → Forecast)
+// ========================================
+
+// ----------------------------------------
+// Funktion: bindEvents
+// Verantwortlichkeit: Bindet alle Event-Handler an die gecachten DOM-Elemente.
+// Verändert: DOM (Event-Listener)
+// Verändert NICHT: state
+// Architektur-Hinweis: Ausschließlich benannte Funktionen. Keine anonymen Handler.
+// ----------------------------------------
+function bindEvents() {
+    $.cityToggleBtn.addEventListener('click', handleToggleCity);
+    $.cityCancelBtn.addEventListener('click', handleCancelCity);
+    $.citySubmitBtn.addEventListener('click', handleCitySubmit);
+    $.cityInput.addEventListener('input', handleCityInput);
+    $.cityInput.addEventListener('keydown', handleCityKeydown);
+    $.refreshBtn.addEventListener('click', handleRefresh);
+}
+
+// ----------------------------------------
+// Funktion: init
+// Verantwortlichkeit: Startet die Anwendung in der vorgeschriebenen Lifecycle-Reihenfolge.
+// Verändert: Alles (orchestriert den gesamten App-Start)
+// Verändert NICHT: —
+// Architektur-Hinweis: Einziger Einstiegspunkt der Anwendung.
+// ----------------------------------------
+function init() {
+    cacheDom();                  // 1. DOM cachen
+    bindEvents();                // 2. Events binden
+    state.isLoading = true;      // 3. State initialisieren
+    updateUI();                  // 4. UI aktualisieren
+    detectLocation();            // 5. Side-Effects starten
+}
+
+init();
+
+</script>
+</body>
+</html>
