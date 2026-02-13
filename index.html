@@ -120,7 +120,7 @@
         </section>
 
         <section id="hourly-section" class="mb-6 glass rounded-2xl p-4 text-center">
-            <div id="hourly-scroll" class="flex gap-4 overflow-x-auto no-scrollbar px-1"></div>
+            <div id="hourly-scroll" class="flex overflow-x-auto no-scrollbar"></div>
         </section>
 
         <!-- 10-Tage-Vorhersage -->
@@ -128,7 +128,6 @@
             <h2 class="text-xs opacity-60 uppercase tracking-wider mb-3">10-Tage-Vorhersage</h2>
             <div id="forecast-list" class="divide-y divide-white/10"></div>
         </section>
-
 
         <!-- Sonnenzeiten -->
         <section id="sun-times" class="glass rounded-2xl p-4 mb-5 mt-5 flex justify-around">
@@ -184,6 +183,28 @@
 
     <!-- Fehlermeldung -->
     <div id="error-display" class="hidden fixed bottom-6 left-4 right-4 bg-red-500/90 backdrop-blur text-white rounded-2xl p-4 text-center text-sm z-50 shadow-lg max-w-md mx-auto"></div>
+
+    <!-- Tages-Detail Bottom Sheet -->
+    <div id="day-sheet-overlay" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50" style="transition:opacity 0.3s ease">
+        <div id="day-sheet" class="absolute bottom-0 left-0 right-0 bg-slate-800/95 backdrop-blur-lg rounded-t-3xl p-5 pt-3 max-w-md mx-auto shadow-2xl text-white" style="transition:transform 0.3s ease;max-height:85vh;overflow-y:auto">
+            <!-- Griff -->
+            <div class="flex justify-center mb-3">
+                <div class="w-10 h-1 rounded-full bg-white/30"></div>
+            </div>
+            <!-- Titel -->
+            <h3 id="day-sheet-title" class="text-lg font-semibold text-center mb-4"></h3>
+            <!-- Temperatur-Graph -->
+            <div class="mb-2">
+                <h4 class="text-xs opacity-60 uppercase tracking-wider mb-2">Temperatur</h4>
+                <svg id="day-temp-graph" viewBox="0 0 320 160" class="w-full" preserveAspectRatio="xMidYMid meet"></svg>
+            </div>
+            <!-- Regen-Graph -->
+            <div>
+                <h4 class="text-xs opacity-60 uppercase tracking-wider mb-2">Niederschlag</h4>
+                <svg id="day-rain-graph" viewBox="0 0 320 160" class="w-full" preserveAspectRatio="xMidYMid meet"></svg>
+            </div>
+        </div>
+    </div>
 
 
 <script>
@@ -297,7 +318,9 @@ const state = {
     error: null,
     showCityInput: false,
     cityInputValue: '',
-    hourly: []
+    hourly: [],
+    rawHourly: null,
+    selectedDayIndex: null
 };
 
 
@@ -341,7 +364,12 @@ function cacheDom() {
         tempGraph:       document.getElementById('temp-graph'),
         tempGraphSection:document.getElementById('temp-graph-section'),
         graphTooltip:    document.getElementById('graph-tooltip'),
-        hourlyScroll: document.getElementById('hourly-scroll')
+        hourlyScroll:    document.getElementById('hourly-scroll'),
+        daySheetOverlay: document.getElementById('day-sheet-overlay'),
+        daySheet:        document.getElementById('day-sheet'),
+        daySheetTitle:   document.getElementById('day-sheet-title'),
+        dayTempGraph:    document.getElementById('day-temp-graph'),
+        dayRainGraph:    document.getElementById('day-rain-graph')
     };
 }
 
@@ -403,6 +431,7 @@ function setWeatherData(data) {
     state.isLoading = false;
     state.error = null;
     state.hourly = buildHourlyForecast(data.hourly);
+    state.rawHourly = data.hourly;
     updateUI();
 }
 
@@ -469,6 +498,7 @@ function updateUI() {
     updateLoadingState();
     updateErrorDisplay();
     updateCityOverlay();
+    updateDayDetailSheet();
 }
 
 function buildHourlyForecast(hourlyData) {
@@ -647,7 +677,9 @@ function updateForecastList() {
         const weather = mapWeatherCode(day.weatherCode, false);
 
         const row = document.createElement('div');
-        row.classList.add('flex', 'items-center', 'justify-between', 'py-3');
+        row.classList.add('flex', 'items-center', 'justify-between', 'py-3', 'cursor-pointer', 'active:bg-white/5', 'rounded-lg', '-mx-1', 'px-1');
+        row.setAttribute('data-day-index', i.toString());
+        row.addEventListener('click', handleForecastDayClick);
 
         const dayLabel = document.createElement('span');
         dayLabel.classList.add('w-16', 'text-sm', 'font-medium');
@@ -960,6 +992,260 @@ function updateCityOverlay() {
 
 
 // ========================================
+// TAGES-DETAIL BOTTOM SHEET
+// Zeigt stündliche Temperatur- und Regengraphen für einen ausgewählten Tag.
+// ========================================
+
+// ----------------------------------------
+// Funktion: buildDayHourlyData
+// Verantwortlichkeit: Filtert state.rawHourly auf exakt einen Kalendertag (00:00–23:00).
+// Verändert: Nichts (pure Funktion)
+// Verändert NICHT: state, DOM
+// ----------------------------------------
+function buildDayHourlyData(dateString) {
+    if (!state.rawHourly || !state.rawHourly.time) return [];
+    const result = [];
+    for (let i = 0; i < state.rawHourly.time.length; i++) {
+        // rawHourly.time enthält ISO-Strings wie "2025-05-10T14:00"
+        if (state.rawHourly.time[i].substring(0, 10) === dateString) {
+            result.push({
+                timeISO: state.rawHourly.time[i],
+                temperature: Math.round(state.rawHourly.temperature_2m[i]),
+                rainProbability: state.rawHourly.precipitation_probability
+                    ? state.rawHourly.precipitation_probability[i]
+                    : 0
+            });
+        }
+    }
+    return result;
+}
+
+// ----------------------------------------
+// Funktion: updateDayDetailSheet
+// Verantwortlichkeit: Zeigt oder verbirgt das Tages-Detail-Sheet. Ruft Graph-Render-Funktionen auf.
+// Verändert: DOM (day-sheet-overlay, day-sheet-title, SVGs)
+// Verändert NICHT: state
+// ----------------------------------------
+function updateDayDetailSheet() {
+    if (state.selectedDayIndex === null) {
+        $.daySheetOverlay.classList.add('hidden');
+        return;
+    }
+    const day = state.forecast[state.selectedDayIndex];
+    if (!day) {
+        $.daySheetOverlay.classList.add('hidden');
+        return;
+    }
+
+    // Titel setzen: z.B. "Heute" oder "Mo, 12. Mai"
+    const dayLabel = formatDay(day.date);
+    const dateObj = new Date(day.date + 'T00:00:00');
+    const months = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+    const fullLabel = dayLabel + ', ' + dateObj.getDate() + '. ' + months[dateObj.getMonth()];
+    $.daySheetTitle.textContent = fullLabel;
+
+    // Stundendaten aufbauen
+    const dayData = buildDayHourlyData(day.date);
+
+    // Graphen rendern
+    updateDayTemperatureGraph(dayData);
+    updateDayRainGraph(dayData);
+
+    // Sheet einblenden
+    $.daySheetOverlay.classList.remove('hidden');
+}
+
+// ----------------------------------------
+// SVG-Hilfsfunktion: Erstellt ein SVG-Element mit Attributen.
+// ----------------------------------------
+const _svgNS = 'http://www.w3.org/2000/svg';
+function _svgEl(tag, attrs) {
+    const node = document.createElementNS(_svgNS, tag);
+    for (const k in attrs) {
+        if (attrs.hasOwnProperty(k)) node.setAttribute(k, attrs[k]);
+    }
+    return node;
+}
+
+// ----------------------------------------
+// Funktion: updateDayTemperatureGraph
+// Verantwortlichkeit: Zeichnet den stündlichen Temperatur-Graphen (Linie + Punkte) in das Day-Sheet.
+// Verändert: DOM (day-temp-graph SVG Kindelemente)
+// Verändert NICHT: state
+// ----------------------------------------
+function updateDayTemperatureGraph(dayData) {
+    const svg = $.dayTempGraph;
+    if (dayData.length === 0) { svg.replaceChildren(); return; }
+
+    const W = 320, H = 160;
+    const padL = 30, padR = 10, padT = 20, padB = 25;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+    const n = dayData.length;
+
+    // Dynamische Y-Skalierung
+    const temps = dayData.map(function(d) { return d.temperature; });
+    const tMin = Math.min.apply(null, temps) - 2;
+    const tMax = Math.max.apply(null, temps) + 2;
+    const tRange = tMax - tMin || 1;
+
+    function xPos(i) { return padL + (plotW / (n - 1)) * i; }
+    function yPos(t) { return padT + plotH - ((t - tMin) / tRange) * plotH; }
+
+    const frag = document.createDocumentFragment();
+
+    // Horizontale Grid-Lines mit Temperaturwerten
+    const gridSteps = 4;
+    for (let g = 0; g <= gridSteps; g++) {
+        const yy = padT + (plotH / gridSteps) * g;
+        const tempVal = Math.round(tMax - (g / gridSteps) * (tMax - tMin));
+        frag.appendChild(_svgEl('line', {
+            x1: padL, y1: yy.toFixed(1), x2: W - padR, y2: yy.toFixed(1),
+            stroke: 'rgba(255,255,255,0.08)', 'stroke-width': '0.5'
+        }));
+        const label = _svgEl('text', {
+            x: (padL - 4).toString(), y: (yy + 3).toFixed(1),
+            'text-anchor': 'end', fill: 'rgba(255,255,255,0.4)',
+            'font-size': '8', 'font-family': 'inherit'
+        });
+        label.textContent = tempVal + '°';
+        frag.appendChild(label);
+    }
+
+    // Pfad bauen
+    let path = '';
+    for (let i = 0; i < n; i++) {
+        path += (i === 0 ? 'M' : 'L') + xPos(i).toFixed(1) + ',' + yPos(dayData[i].temperature).toFixed(1);
+    }
+
+    // Linie
+    frag.appendChild(_svgEl('path', {
+        d: path, fill: 'none', stroke: 'rgba(255,255,255,0.9)',
+        'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+        class: 'graph-line'
+    }));
+
+    // Punkte
+    for (let i = 0; i < n; i++) {
+        const delay = (i * 0.03 + 0.3) + 's';
+        frag.appendChild(_svgEl('circle', {
+            cx: xPos(i).toFixed(1), cy: yPos(dayData[i].temperature).toFixed(1), r: '2.5',
+            fill: 'white', class: 'graph-dot', style: 'animation-delay:' + delay
+        }));
+    }
+
+    // X-Achsen-Labels: 00, 06, 12, 18
+    const xLabels = [0, 6, 12, 18];
+    for (let li = 0; li < xLabels.length; li++) {
+        const h = xLabels[li];
+        if (h < n) {
+            const lbl = _svgEl('text', {
+                x: xPos(h).toFixed(1), y: (H - 6).toString(),
+                'text-anchor': 'middle', fill: 'rgba(255,255,255,0.5)',
+                'font-size': '9', 'font-family': 'inherit'
+            });
+            lbl.textContent = (h < 10 ? '0' : '') + h + ':00';
+            frag.appendChild(lbl);
+        }
+    }
+
+    svg.replaceChildren(frag);
+}
+
+// ----------------------------------------
+// Funktion: updateDayRainGraph
+// Verantwortlichkeit: Zeichnet den stündlichen Regenwahrscheinlichkeits-Graphen (Fläche) in das Day-Sheet.
+// Verändert: DOM (day-rain-graph SVG Kindelemente)
+// Verändert NICHT: state
+// Architektur-Hinweis: Fixe Y-Skala 0–100%. Gradient-Fill. Kein Sonderfall bei 0%.
+// ----------------------------------------
+function updateDayRainGraph(dayData) {
+    const svg = $.dayRainGraph;
+    if (dayData.length === 0) { svg.replaceChildren(); return; }
+
+    const W = 320, H = 160;
+    const padL = 10, padR = 30, padT = 10, padB = 25;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+    const n = dayData.length;
+
+    // Fixe Y-Skala: 0–100
+    function xPos(i) { return padL + (plotW / (n - 1)) * i; }
+    function yPos(val) { return padT + plotH - (val / 100) * plotH; }
+
+    const frag = document.createDocumentFragment();
+
+    // Gradient-Definition
+    const defs = _svgEl('defs', {});
+    const grad = _svgEl('linearGradient', { id: 'rainAreaGrad', x1: '0', y1: '0', x2: '0', y2: '1' });
+    grad.appendChild(_svgEl('stop', { offset: '0%', 'stop-color': '#38bdf8', 'stop-opacity': '0.20' }));
+    grad.appendChild(_svgEl('stop', { offset: '100%', 'stop-color': '#38bdf8', 'stop-opacity': '0.05' }));
+    defs.appendChild(grad);
+    frag.appendChild(defs);
+
+    // Horizontale Grid-Lines bei 0%, 20%, 40%, 60%, 80%, 100%
+    const gridVals = [0, 20, 40, 60, 80, 100];
+    for (let g = 0; g < gridVals.length; g++) {
+        const yy = yPos(gridVals[g]);
+        frag.appendChild(_svgEl('line', {
+            x1: padL, y1: yy.toFixed(1), x2: W - padR, y2: yy.toFixed(1),
+            stroke: 'rgba(255,255,255,0.08)', 'stroke-width': '0.5'
+        }));
+        // Prozentwerte rechts
+        const label = _svgEl('text', {
+            x: (W - padR + 4).toString(), y: (yy + 3).toFixed(1),
+            'text-anchor': 'start', fill: 'rgba(255,255,255,0.4)',
+            'font-size': '8', 'font-family': 'inherit'
+        });
+        label.textContent = gridVals[g] + '%';
+        frag.appendChild(label);
+    }
+
+    // Flächen-Pfad bauen
+    let linePath = '';
+    let areaPath = '';
+    for (let i = 0; i < n; i++) {
+        const px = xPos(i).toFixed(1);
+        const py = yPos(dayData[i].rainProbability).toFixed(1);
+        linePath += (i === 0 ? 'M' : 'L') + px + ',' + py;
+        areaPath += (i === 0 ? 'M' : 'L') + px + ',' + py;
+    }
+    // Fläche schließen: unten entlang zurück
+    areaPath += 'L' + xPos(n - 1).toFixed(1) + ',' + yPos(0).toFixed(1);
+    areaPath += 'L' + xPos(0).toFixed(1) + ',' + yPos(0).toFixed(1) + 'Z';
+
+    // Gefüllte Fläche
+    frag.appendChild(_svgEl('path', {
+        d: areaPath, fill: 'url(#rainAreaGrad)'
+    }));
+
+    // Linie
+    frag.appendChild(_svgEl('path', {
+        d: linePath, fill: 'none', stroke: '#38bdf8',
+        'stroke-width': '1.5', 'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+        'stroke-opacity': '0.7', class: 'graph-line'
+    }));
+
+    // X-Achsen-Labels: 00, 06, 12, 18
+    const xLabels = [0, 6, 12, 18];
+    for (let li = 0; li < xLabels.length; li++) {
+        const h = xLabels[li];
+        if (h < n) {
+            const lbl = _svgEl('text', {
+                x: xPos(h).toFixed(1), y: (H - 6).toString(),
+                'text-anchor': 'middle', fill: 'rgba(255,255,255,0.5)',
+                'font-size': '9', 'font-family': 'inherit'
+            });
+            lbl.textContent = (h < 10 ? '0' : '') + h + ':00';
+            frag.appendChild(lbl);
+        }
+    }
+
+    svg.replaceChildren(frag);
+}
+
+
+// ========================================
 // EVENT-HANDLER
 // Verändern ausschließlich state → updateUI().
 // Kein DOM-Zugriff in Event-Handlern.
@@ -1041,6 +1327,30 @@ function handleRefresh() {
     }
 }
 
+// ----------------------------------------
+// Funktion: handleForecastDayClick
+// Verantwortlichkeit: Öffnet das Tages-Detail-Sheet für den angeklickten Tag.
+// Verändert: state.selectedDayIndex
+// Verändert NICHT: DOM
+// ----------------------------------------
+function handleForecastDayClick(e) {
+    const row = e.currentTarget;
+    const idx = parseInt(row.getAttribute('data-day-index'));
+    state.selectedDayIndex = idx;
+    updateUI();
+}
+
+// ----------------------------------------
+// Funktion: handleCloseDaySheet
+// Verantwortlichkeit: Schließt das Tages-Detail-Sheet.
+// Verändert: state.selectedDayIndex
+// Verändert NICHT: DOM
+// ----------------------------------------
+function handleCloseDaySheet() {
+    state.selectedDayIndex = null;
+    updateUI();
+}
+
 
 // ========================================
 // ASYNC / SIDE-EFFECTS
@@ -1092,7 +1402,7 @@ async function fetchWeather() {
         + '&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max,wind_speed_10m_max'
         + '&timezone=auto'
         + '&forecast_days=10'
-        + '&hourly=temperature_2m,weather_code';
+        + '&hourly=temperature_2m,weather_code,precipitation_probability';
 
     try {
         const response = await fetch(url);
@@ -1163,6 +1473,10 @@ function bindEvents() {
     $.cityInput.addEventListener('input', handleCityInput);
     $.cityInput.addEventListener('keydown', handleCityKeydown);
     $.refreshBtn.addEventListener('click', handleRefresh);
+    // Tages-Detail-Sheet: Klick auf Overlay (nicht auf Sheet selbst) schließt
+    $.daySheetOverlay.addEventListener('click', function handleSheetOverlayClick(e) {
+        if (e.target === $.daySheetOverlay) handleCloseDaySheet();
+    });
 }
 
 // ----------------------------------------
