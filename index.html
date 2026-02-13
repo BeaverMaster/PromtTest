@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de" class="theme-light">
+<html lang="de">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
@@ -11,31 +11,22 @@
     <title>Better</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* iOS Overscroll-Fix: Root-Scroll deaktivieren, verhindert weißen Rand beim Rubber-Banding */
-        html, body {
-            height: 100%;
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-        }
         body {
             transition: background 0.5s ease;
             -webkit-tap-highlight-color: transparent;
         }
-        /* Hintergrund auf html UND body, damit beim Overscroll kein weißer Rand sichtbar wird */
-        html.theme-light,
         body.theme-light {
             background: linear-gradient(180deg, #38bdf8 0%, #2563eb 100%);
         }
-        html.theme-dark,
         body.theme-dark {
             background: linear-gradient(180deg, #0f172a 0%, #1e1b4b 100%);
         }
-        /* Eigener Scroll-Container: nur #app scrollt, nicht html/body */
-        #app {
-            height: 100%;
-            overflow-y: auto;
-            -webkit-overflow-scrolling: touch;
+        /* iOS Overscroll-Fix: Fester Hintergrund-Layer, der beim Rubber-Banding sichtbar bleibt */
+        .background-layer {
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            transition: background 0.5s ease;
         }
         .glass {
             background: rgba(255, 255, 255, 0.15);
@@ -70,7 +61,10 @@
         }
     </style>
 </head>
-<body class="theme-light text-white font-sans">
+<body class="theme-light min-h-screen text-white font-sans">
+
+    <!-- iOS Overscroll-Fix: Fester Hintergrund-Layer, verhindert weißen Rand beim Rubber-Banding -->
+    <div id="background-layer" class="background-layer"></div>
 
     <!-- ========================================
          HAUPTBEREICH
@@ -78,7 +72,7 @@
          Keine Layout-Erzeugung im Script.
          Alle dynamischen Bereiche mit eindeutigen IDs.
          ======================================== -->
-    <main id="app" class="p-5 pt-14 pb-10 max-w-md mx-auto select-none">
+    <main id="app" class="min-h-screen p-5 pt-14 pb-10 max-w-md mx-auto select-none">
 
         <!-- Header: Stadtname + Steuerung -->
         <header id="header" class="text-center mb-8 relative">
@@ -466,23 +460,21 @@ function updateUI() {
 
 // ----------------------------------------
 // Funktion: updateTheme
-// Verantwortlichkeit: Schaltet Dark/Light-Klassen auf body UND html (document.documentElement).
-// Verändert: DOM (body classList, html classList)
+// Verantwortlichkeit: Schaltet Dark/Light-Klassen auf dem body-Element und aktualisiert den Background-Layer.
+// Verändert: DOM (body classList, background-layer style)
 // Verändert NICHT: state
-// Architektur-Hinweis: html braucht dieselbe Klasse, damit beim iOS-Overscroll kein weißer Rand erscheint.
+// Architektur-Hinweis: Der Background-Layer (position:fixed) verhindert weißen Rand beim iOS-Overscroll.
 // ----------------------------------------
 function updateTheme() {
-    const root = document.documentElement;
+    const bg = document.getElementById('background-layer');
     if (state.isDarkMode) {
         $.body.classList.add('theme-dark');
         $.body.classList.remove('theme-light');
-        root.classList.add('theme-dark');
-        root.classList.remove('theme-light');
+        bg.style.background = 'linear-gradient(180deg, #0f172a 0%, #1e1b4b 100%)';
     } else {
         $.body.classList.add('theme-light');
         $.body.classList.remove('theme-dark');
-        root.classList.add('theme-light');
-        root.classList.remove('theme-dark');
+        bg.style.background = 'linear-gradient(180deg, #38bdf8 0%, #2563eb 100%)';
     }
 }
 
