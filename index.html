@@ -63,12 +63,7 @@
         #hourly-scroll::-webkit-scrollbar {
             display: none;
         }
-        /* Body Scroll Lock – position:fixed verhindert iOS-Root-Scroll komplett */
-        .body-locked {
-            position: fixed !important;
-            width: 100% !important;
-            overflow: hidden !important;
-        }
+
         /* Sheet-Overlay Fade */
         #day-sheet-overlay {
             opacity: 0;
@@ -110,7 +105,8 @@
          Keine Layout-Erzeugung im Script.
          Alle dynamischen Bereiche mit eindeutigen IDs.
          ======================================== -->
-    <main id="app" class="min-h-screen p-5 pt-14 pb-10 max-w-md mx-auto select-none">
+    <main id="app" class="min-h-screen p-5 pt-14 pb-10 max-w-md mx-auto select-none overflow-y-auto"
+                   style="-webkit-overflow-scrolling: touch";>
 
         <!-- Header: Stadtname + Steuerung -->
         <header id="header" class="text-center mb-8 relative">
@@ -409,7 +405,8 @@ function cacheDom() {
         dayTempGraph:    document.getElementById('day-temp-graph'),
         dayRainGraph:    document.getElementById('day-rain-graph'),
         daySheetHandle:  document.getElementById('day-sheet-handle'),
-        dayGraphTooltip: document.getElementById('day-graph-tooltip')
+        dayGraphTooltip: document.getElementById('day-graph-tooltip'),
+        app: document.getElementById('app')
     };
 }
 
@@ -1071,29 +1068,6 @@ let _currentDayData = [];
 let _dayTempLayout = null;
 let _dayRainLayout = null;
 
-// ----------------------------------------
-// Scroll-Lock: Scrollposition speichern, Body fixieren, Scroll wiederherstellen.
-// Verhindert jeglichen Hintergrund-Scroll auf iOS (inkl. Overscroll).
-// ----------------------------------------
-let _savedScrollY = 0;
-let _isBodyLocked = false;
-
-function lockBodyScroll() {
-    if (_isBodyLocked) return;
-    _isBodyLocked = true;
-    _savedScrollY = window.scrollY;
-    $.body.style.top = '-' + _savedScrollY + 'px';
-    $.body.classList.add('body-locked');
-}
-
-function unlockBodyScroll() {
-    if (!_isBodyLocked) return;
-    _isBodyLocked = false;
-    $.body.classList.remove('body-locked');
-    $.body.style.top = '';
-    window.scrollTo(0, _savedScrollY);
-}
-
 function updateDayDetailSheet() {
     // Geschlossen und nicht animierend → Overlay deaktivieren, Scroll freigeben
     if (state.selectedDayIndex === null) {
@@ -1119,7 +1093,7 @@ function updateDayDetailSheet() {
 
     // Overlay anzeigen + Body sperren (Sheet-Panel startet bei translateY(100%))
     $.daySheetOverlay.classList.add('sheet-active');
-    lockBodyScroll();
+    $.app.style.overflow = 'hidden';
 }
 
 // ----------------------------------------
@@ -1561,8 +1535,8 @@ function handleForecastDayClick(e) {
 // ----------------------------------------
 function handleCloseDaySheet() {
     state.isSheetOpen = false;
+    $.app.style.overflow = 'hidden';
     $.daySheet.classList.remove('sheet-open');
-    unlockBodyScroll();
     // Highlight + Tooltip aufräumen
     handleDayGraphLeave($.dayTempGraph);
     handleDayGraphLeave($.dayRainGraph);
@@ -1758,3 +1732,4 @@ init();
 </script>
 </body>
 </html>
+
