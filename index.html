@@ -63,6 +63,38 @@
         #hourly-scroll::-webkit-scrollbar {
             display: none;
         }
+        /* Body Scroll Lock – verhindert Hintergrund-Scroll bei offenem Sheet */
+        .body-locked {
+            overflow: hidden !important;
+        }
+        /* Sheet-Overlay Fade */
+        #day-sheet-overlay {
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 350ms cubic-bezier(0.32, 0.72, 0, 1);
+        }
+        #day-sheet-overlay.sheet-active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        /* Sheet Panel Slide-Animation */
+        #day-sheet {
+            transform: translateY(100%);
+            transition: transform 350ms cubic-bezier(0.32, 0.72, 0, 1);
+            will-change: transform;
+        }
+        #day-sheet.sheet-open {
+            transform: translateY(0);
+        }
+        /* Drag: Transition deaktivieren während Ziehen */
+        #day-sheet.sheet-dragging {
+            transition: none !important;
+        }
+        /* Graph-Interaktions-Tooltip (fixed, schwebt über allem) */
+        .day-graph-tooltip {
+            pointer-events: none;
+            z-index: 60;
+        }
     </style>
 </head>
 <body class="theme-light min-h-screen text-white font-sans">
@@ -185,26 +217,28 @@
     <div id="error-display" class="hidden fixed bottom-6 left-4 right-4 bg-red-500/90 backdrop-blur text-white rounded-2xl p-4 text-center text-sm z-50 shadow-lg max-w-md mx-auto"></div>
 
     <!-- Tages-Detail Bottom Sheet -->
-    <div id="day-sheet-overlay" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50" style="transition:opacity 0.3s ease">
-        <div id="day-sheet" class="absolute bottom-0 left-0 right-0 bg-slate-800/95 backdrop-blur-lg rounded-t-3xl p-5 pt-3 max-w-md mx-auto shadow-2xl text-white" style="transition:transform 0.3s ease;max-height:85vh;overflow-y:auto">
-            <!-- Griff -->
-            <div class="flex justify-center mb-3">
+    <div id="day-sheet-overlay" class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50">
+        <div id="day-sheet" class="absolute bottom-0 left-0 right-0 bg-slate-800/95 backdrop-blur-lg rounded-t-3xl p-5 pt-3 max-w-md mx-auto shadow-2xl text-white" style="max-height:85vh;overflow-y:auto">
+            <!-- Drag-Handle -->
+            <div id="day-sheet-handle" class="flex justify-center mb-3 pt-1 cursor-grab active:cursor-grabbing" style="touch-action:none">
                 <div class="w-10 h-1 rounded-full bg-white/30"></div>
             </div>
             <!-- Titel -->
             <h3 id="day-sheet-title" class="text-lg font-semibold text-center mb-4"></h3>
             <!-- Temperatur-Graph -->
-            <div class="mb-2">
+            <div class="mb-2 relative">
                 <h4 class="text-xs opacity-60 uppercase tracking-wider mb-2">Temperatur</h4>
-                <svg id="day-temp-graph" viewBox="0 0 320 160" class="w-full" preserveAspectRatio="xMidYMid meet"></svg>
+                <svg id="day-temp-graph" viewBox="0 0 320 160" class="w-full" preserveAspectRatio="xMidYMid meet" style="touch-action:none"></svg>
             </div>
             <!-- Regen-Graph -->
-            <div>
+            <div class="relative">
                 <h4 class="text-xs opacity-60 uppercase tracking-wider mb-2">Niederschlag</h4>
-                <svg id="day-rain-graph" viewBox="0 0 320 160" class="w-full" preserveAspectRatio="xMidYMid meet"></svg>
+                <svg id="day-rain-graph" viewBox="0 0 320 160" class="w-full" preserveAspectRatio="xMidYMid meet" style="touch-action:none"></svg>
             </div>
         </div>
     </div>
+    <!-- Graph-Interaktions-Tooltip (fixed, schwebt über Sheet) -->
+    <div id="day-graph-tooltip" class="day-graph-tooltip fixed hidden bg-black/80 text-white text-xs rounded-xl px-3 py-2 shadow-lg"></div>
 
 
 <script>
@@ -320,7 +354,9 @@ const state = {
     cityInputValue: '',
     hourly: [],
     rawHourly: null,
-    selectedDayIndex: null
+    selectedDayIndex: null,
+    isSheetOpen: false,
+    sheetDragOffset: 0
 };
 
 
@@ -369,7 +405,9 @@ function cacheDom() {
         daySheet:        document.getElementById('day-sheet'),
         daySheetTitle:   document.getElementById('day-sheet-title'),
         dayTempGraph:    document.getElementById('day-temp-graph'),
-        dayRainGraph:    document.getElementById('day-rain-graph')
+        dayRainGraph:    document.getElementById('day-rain-graph'),
+        daySheetHandle:  document.getElementById('day-sheet-handle'),
+        dayGraphTooltip: document.getElementById('day-graph-tooltip')
     };
 }
 
@@ -1022,37 +1060,41 @@ function buildDayHourlyData(dateString) {
 
 // ----------------------------------------
 // Funktion: updateDayDetailSheet
-// Verantwortlichkeit: Zeigt oder verbirgt das Tages-Detail-Sheet. Ruft Graph-Render-Funktionen auf.
-// Verändert: DOM (day-sheet-overlay, day-sheet-title, SVGs)
+// Verantwortlichkeit: Rendert Inhalt des Tages-Detail-Sheets. Steuert Overlay + Body-Lock.
+// Verändert: DOM (day-sheet-overlay, day-sheet-title, SVGs, body classList)
 // Verändert NICHT: state
+// Architektur-Hinweis: Animation (sheet-open Klasse) wird von open/close-Handlern gesteuert.
 // ----------------------------------------
+let _currentDayData = [];
+let _dayTempLayout = null;
+let _dayRainLayout = null;
+
 function updateDayDetailSheet() {
+    // Geschlossen und nicht animierend → Overlay deaktivieren
     if (state.selectedDayIndex === null) {
-        $.daySheetOverlay.classList.add('hidden');
+        if (!state.isSheetOpen) {
+            $.daySheetOverlay.classList.remove('sheet-active');
+            $.body.classList.remove('body-locked');
+        }
         return;
     }
     const day = state.forecast[state.selectedDayIndex];
-    if (!day) {
-        $.daySheetOverlay.classList.add('hidden');
-        return;
-    }
+    if (!day) return;
 
-    // Titel setzen: z.B. "Heute" oder "Mo, 12. Mai"
+    // Titel setzen: z.B. "Heute, 12. Mai"
     const dayLabel = formatDay(day.date);
     const dateObj = new Date(day.date + 'T00:00:00');
     const months = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
-    const fullLabel = dayLabel + ', ' + dateObj.getDate() + '. ' + months[dateObj.getMonth()];
-    $.daySheetTitle.textContent = fullLabel;
+    $.daySheetTitle.textContent = dayLabel + ', ' + dateObj.getDate() + '. ' + months[dateObj.getMonth()];
 
-    // Stundendaten aufbauen
-    const dayData = buildDayHourlyData(day.date);
+    // Stundendaten aufbauen und Graphen rendern
+    _currentDayData = buildDayHourlyData(day.date);
+    updateDayTemperatureGraph(_currentDayData);
+    updateDayRainGraph(_currentDayData);
 
-    // Graphen rendern
-    updateDayTemperatureGraph(dayData);
-    updateDayRainGraph(dayData);
-
-    // Sheet einblenden
-    $.daySheetOverlay.classList.remove('hidden');
+    // Overlay anzeigen + Body sperren (Sheet-Panel startet bei translateY(100%))
+    $.daySheetOverlay.classList.add('sheet-active');
+    $.body.classList.add('body-locked');
 }
 
 // ----------------------------------------
@@ -1150,6 +1192,9 @@ function updateDayTemperatureGraph(dayData) {
     }
 
     svg.replaceChildren(frag);
+
+    // Layout-Daten für Graph-Interaktion speichern
+    _dayTempLayout = { padL: padL, padR: padR, padT: padT, padB: padB, plotW: plotW, plotH: plotH, n: n, tMin: tMin, tRange: tRange };
 }
 
 // ----------------------------------------
@@ -1242,6 +1287,143 @@ function updateDayRainGraph(dayData) {
     }
 
     svg.replaceChildren(frag);
+
+    // Layout-Daten für Graph-Interaktion speichern
+    _dayRainLayout = { padL: padL, padR: padR, padT: padT, padB: padB, plotW: plotW, plotH: plotH, n: n };
+}
+
+
+// ========================================
+// GRAPH-INTERAKTION (Tages-Detail)
+// Pointermove über SVG → Highlight-Linie + Tooltip.
+// Kein State-Mutation. Kein Reflow-Spam.
+// ========================================
+
+// ----------------------------------------
+// Funktion: handleDayGraphPointer
+// Verantwortlichkeit: Zeigt Highlight-Linie, Punkt und Tooltip bei Pointer-Bewegung über einen Day-Graph.
+// Verändert: DOM (SVG highlight-Gruppe, Tooltip)
+// Verändert NICHT: state
+// ----------------------------------------
+function handleDayGraphPointer(e, svg, layout, valueFn) {
+    if (!_currentDayData.length || !layout) return;
+    const rect = svg.getBoundingClientRect();
+    const relX = (e.clientX - rect.left) / rect.width;
+    const svgX = relX * 320;
+    const rawIdx = (svgX - layout.padL) / layout.plotW * (layout.n - 1);
+    const idx = Math.max(0, Math.min(layout.n - 1, Math.round(rawIdx)));
+    const d = _currentDayData[idx];
+    if (!d) return;
+
+    const cx = layout.padL + (layout.plotW / (layout.n - 1)) * idx;
+    const cy = valueFn(d, layout);
+
+    // Highlight-Gruppe im SVG erzeugen oder aktualisieren
+    let hl = svg.querySelector('[data-hl]');
+    if (!hl) {
+        hl = document.createElementNS(_svgNS, 'g');
+        hl.setAttribute('data-hl', '1');
+        svg.appendChild(hl);
+    }
+    hl.replaceChildren(
+        _svgEl('line', {
+            x1: cx.toFixed(1), y1: layout.padT.toString(),
+            x2: cx.toFixed(1), y2: (layout.padT + layout.plotH).toString(),
+            stroke: 'rgba(255,255,255,0.3)', 'stroke-width': '1', 'stroke-dasharray': '3,3'
+        }),
+        _svgEl('circle', {
+            cx: cx.toFixed(1), cy: cy.toFixed(1), r: '5',
+            fill: 'white', 'fill-opacity': '0.9'
+        })
+    );
+
+    // Tooltip positionieren (fixed)
+    const hStr = new Date(d.timeISO).getHours().toString().padStart(2, '0') + ':00';
+    $.dayGraphTooltip.textContent = hStr + '   ' + d.temperature + '°   ' + d.rainProbability + '%';
+    $.dayGraphTooltip.classList.remove('hidden');
+    const ttW = $.dayGraphTooltip.offsetWidth;
+    let left = e.clientX - ttW / 2;
+    if (left < 8) left = 8;
+    if (left + ttW > window.innerWidth - 8) left = window.innerWidth - ttW - 8;
+    $.dayGraphTooltip.style.left = left + 'px';
+    $.dayGraphTooltip.style.top = (rect.top - 36) + 'px';
+}
+
+// ----------------------------------------
+// Funktion: handleDayGraphLeave
+// Verantwortlichkeit: Entfernt Highlight und Tooltip beim Verlassen des Graphen.
+// Verändert: DOM (SVG highlight-Gruppe, Tooltip)
+// Verändert NICHT: state
+// ----------------------------------------
+function handleDayGraphLeave(svg) {
+    const hl = svg.querySelector('[data-hl]');
+    if (hl) hl.remove();
+    $.dayGraphTooltip.classList.add('hidden');
+}
+
+
+// ========================================
+// SHEET DRAG-TO-DISMISS
+// Pointer-Events auf dem Drag-Handle steuern das Herunterziehen.
+// Nur vertikale Bewegung nach unten. Über 120px → Sheet schließen.
+// ========================================
+
+let _isDragging = false;
+let _dragStartY = 0;
+let _dragCurrentOffset = 0;
+
+// ----------------------------------------
+// Funktion: handleSheetPointerDown
+// Verantwortlichkeit: Startet den Drag-Vorgang auf dem Sheet-Handle.
+// Verändert: Drag-State (_isDragging, _dragStartY)
+// Verändert NICHT: state
+// ----------------------------------------
+function handleSheetPointerDown(e) {
+    _isDragging = true;
+    _dragStartY = e.clientY;
+    _dragCurrentOffset = 0;
+    $.daySheet.classList.add('sheet-dragging');
+    $.daySheetHandle.setPointerCapture(e.pointerId);
+    e.preventDefault();
+}
+
+// ----------------------------------------
+// Funktion: handleSheetPointerMove
+// Verantwortlichkeit: Aktualisiert die Sheet-Position während des Drags.
+// Verändert: DOM (day-sheet transform, overlay opacity)
+// Verändert NICHT: state
+// ----------------------------------------
+function handleSheetPointerMove(e) {
+    if (!_isDragging) return;
+    const dy = e.clientY - _dragStartY;
+    _dragCurrentOffset = Math.max(0, dy);
+    $.daySheet.style.transform = 'translateY(' + _dragCurrentOffset + 'px)';
+    // Overlay abdunkeln proportional zum Drag
+    const progress = Math.min(_dragCurrentOffset / 300, 1);
+    $.daySheetOverlay.style.opacity = (1 - progress * 0.5).toString();
+}
+
+// ----------------------------------------
+// Funktion: handleSheetPointerUp
+// Verantwortlichkeit: Beendet den Drag. > 120px → schließen, sonst snap zurück.
+// Verändert: state (via handleCloseDaySheet), DOM
+// Verändert NICHT: —
+// ----------------------------------------
+function handleSheetPointerUp() {
+    if (!_isDragging) return;
+    _isDragging = false;
+    $.daySheet.classList.remove('sheet-dragging');
+    $.daySheet.style.transform = '';
+    $.daySheetOverlay.style.opacity = '';
+
+    if (_dragCurrentOffset > 120) {
+        // Schwelle überschritten → Sheet schließen
+        handleCloseDaySheet();
+    } else {
+        // Snap zurück zur offenen Position
+        $.daySheet.classList.add('sheet-open');
+    }
+    _dragCurrentOffset = 0;
 }
 
 
@@ -1329,26 +1511,51 @@ function handleRefresh() {
 
 // ----------------------------------------
 // Funktion: handleForecastDayClick
-// Verantwortlichkeit: Öffnet das Tages-Detail-Sheet für den angeklickten Tag.
-// Verändert: state.selectedDayIndex
-// Verändert NICHT: DOM
+// Verantwortlichkeit: Öffnet das Tages-Detail-Sheet mit Slide-Animation.
+// Verändert: state.selectedDayIndex, state.isSheetOpen
+// Architektur-Hinweis: Zweistufige rAF für saubere CSS-Transition.
 // ----------------------------------------
 function handleForecastDayClick(e) {
-    const row = e.currentTarget;
-    const idx = parseInt(row.getAttribute('data-day-index'));
+    const idx = parseInt(e.currentTarget.getAttribute('data-day-index'));
     state.selectedDayIndex = idx;
+    state.isSheetOpen = true;
     updateUI();
+    // Zweistufige rAF: Browser rendert Overlay + Sheet bei translateY(100%), dann Animation starten
+    requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+            $.daySheet.classList.add('sheet-open');
+        });
+    });
 }
 
 // ----------------------------------------
 // Funktion: handleCloseDaySheet
-// Verantwortlichkeit: Schließt das Tages-Detail-Sheet.
-// Verändert: state.selectedDayIndex
-// Verändert NICHT: DOM
+// Verantwortlichkeit: Schließt das Tages-Detail-Sheet mit Slide-Out-Animation.
+// Verändert: state.selectedDayIndex, state.isSheetOpen
+// Architektur-Hinweis: Sheet fährt nach unten, danach Overlay ausblenden + State zurücksetzen.
 // ----------------------------------------
 function handleCloseDaySheet() {
-    state.selectedDayIndex = null;
-    updateUI();
+    state.isSheetOpen = false;
+    $.daySheet.classList.remove('sheet-open');
+    $.body.classList.remove('body-locked');
+    // Highlight + Tooltip aufräumen
+    handleDayGraphLeave($.dayTempGraph);
+    handleDayGraphLeave($.dayRainGraph);
+
+    $.daySheet.addEventListener('transitionend', function onSheetClosed() {
+        $.daySheet.removeEventListener('transitionend', onSheetClosed);
+        state.selectedDayIndex = null;
+        $.daySheetOverlay.classList.remove('sheet-active');
+        _currentDayData = [];
+    }, { once: true });
+    // Fallback falls transitionend nicht feuert
+    setTimeout(function() {
+        if (state.selectedDayIndex !== null && !state.isSheetOpen) {
+            state.selectedDayIndex = null;
+            $.daySheetOverlay.classList.remove('sheet-active');
+            _currentDayData = [];
+        }
+    }, 400);
 }
 
 
@@ -1473,9 +1680,36 @@ function bindEvents() {
     $.cityInput.addEventListener('input', handleCityInput);
     $.cityInput.addEventListener('keydown', handleCityKeydown);
     $.refreshBtn.addEventListener('click', handleRefresh);
+
     // Tages-Detail-Sheet: Klick auf Overlay (nicht auf Sheet selbst) schließt
     $.daySheetOverlay.addEventListener('click', function handleSheetOverlayClick(e) {
         if (e.target === $.daySheetOverlay) handleCloseDaySheet();
+    });
+
+    // Sheet Drag-to-Dismiss auf dem Handle
+    $.daySheetHandle.addEventListener('pointerdown', handleSheetPointerDown);
+    $.daySheetHandle.addEventListener('pointermove', handleSheetPointerMove);
+    $.daySheetHandle.addEventListener('pointerup', handleSheetPointerUp);
+    $.daySheetHandle.addEventListener('pointercancel', handleSheetPointerUp);
+
+    // Graph-Interaktion: Temperatur-Graph
+    $.dayTempGraph.addEventListener('pointermove', function handleTempPointer(e) {
+        handleDayGraphPointer(e, $.dayTempGraph, _dayTempLayout, function(d, L) {
+            return L.padT + L.plotH - ((d.temperature - L.tMin) / L.tRange) * L.plotH;
+        });
+    });
+    $.dayTempGraph.addEventListener('pointerleave', function handleTempLeave() {
+        handleDayGraphLeave($.dayTempGraph);
+    });
+
+    // Graph-Interaktion: Regen-Graph
+    $.dayRainGraph.addEventListener('pointermove', function handleRainPointer(e) {
+        handleDayGraphPointer(e, $.dayRainGraph, _dayRainLayout, function(d, L) {
+            return L.padT + L.plotH - (d.rainProbability / 100) * L.plotH;
+        });
+    });
+    $.dayRainGraph.addEventListener('pointerleave', function handleRainLeave() {
+        handleDayGraphLeave($.dayRainGraph);
     });
 }
 
