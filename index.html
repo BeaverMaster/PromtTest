@@ -11,20 +11,18 @@
     <title>Better</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* iOS Overscroll-Fix: Gradient auf html UND body, damit kein weißer Rand sichtbar wird */
+        /* iOS Overscroll-Fix: Root-Scroll deaktivieren, verhindert weißen Rand beim Rubber-Banding */
         html, body {
-            min-height: 100%;
+            height: 100%;
             margin: 0;
             padding: 0;
+            overflow: hidden;
         }
-        html, body {
+        body {
             transition: background 0.5s ease;
             -webkit-tap-highlight-color: transparent;
         }
-        /* iOS Rubber-Banding: Overscroll unterbinden */
-        body {
-            overscroll-behavior-y: none;
-        }
+        /* Hintergrund auf html UND body, damit beim Overscroll kein weißer Rand sichtbar wird */
         html.theme-light,
         body.theme-light {
             background: linear-gradient(180deg, #38bdf8 0%, #2563eb 100%);
@@ -32,6 +30,12 @@
         html.theme-dark,
         body.theme-dark {
             background: linear-gradient(180deg, #0f172a 0%, #1e1b4b 100%);
+        }
+        /* Eigener Scroll-Container: nur #app scrollt, nicht html/body */
+        #app {
+            height: 100%;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
         }
         .glass {
             background: rgba(255, 255, 255, 0.15);
@@ -66,7 +70,7 @@
         }
     </style>
 </head>
-<body class="theme-light min-h-screen text-white font-sans">
+<body class="theme-light text-white font-sans">
 
     <!-- ========================================
          HAUPTBEREICH
@@ -74,7 +78,7 @@
          Keine Layout-Erzeugung im Script.
          Alle dynamischen Bereiche mit eindeutigen IDs.
          ======================================== -->
-    <main id="app" class="min-h-screen p-5 pt-14 pb-10 max-w-md mx-auto select-none">
+    <main id="app" class="p-5 pt-14 pb-10 max-w-md mx-auto select-none">
 
         <!-- Header: Stadtname + Steuerung -->
         <header id="header" class="text-center mb-8 relative">
