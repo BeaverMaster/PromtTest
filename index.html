@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="de" class="theme-light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
@@ -11,13 +11,25 @@
     <title>Better</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body {
+        /* iOS Overscroll-Fix: Gradient auf html UND body, damit kein weißer Rand sichtbar wird */
+        html, body {
+            min-height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+        html, body {
             transition: background 0.5s ease;
             -webkit-tap-highlight-color: transparent;
         }
+        /* iOS Rubber-Banding: Overscroll unterbinden */
+        body {
+            overscroll-behavior-y: none;
+        }
+        html.theme-light,
         body.theme-light {
             background: linear-gradient(180deg, #38bdf8 0%, #2563eb 100%);
         }
+        html.theme-dark,
         body.theme-dark {
             background: linear-gradient(180deg, #0f172a 0%, #1e1b4b 100%);
         }
@@ -31,6 +43,26 @@
         }
         .spinner {
             animation: spin 1s linear infinite;
+        }
+        /* Temperature Graph */
+        .graph-line {
+            stroke-dasharray: 1000;
+            stroke-dashoffset: 1000;
+            animation: drawLine 1.5s ease forwards;
+        }
+        .graph-dot {
+            opacity: 0;
+            animation: fadeInDot 0.3s ease forwards;
+        }
+        @keyframes drawLine {
+            to { stroke-dashoffset: 0; }
+        }
+        @keyframes fadeInDot {
+            to { opacity: 1; }
+        }
+        .graph-tooltip {
+            pointer-events: none;
+            transition: opacity 0.15s ease, transform 0.15s ease;
         }
     </style>
 </head>
@@ -102,6 +134,13 @@
         <section id="forecast" class="glass rounded-2xl p-4">
             <h2 class="text-xs opacity-60 uppercase tracking-wider mb-3">10-Tage-Vorhersage</h2>
             <div id="forecast-list" class="divide-y divide-white/10"></div>
+        </section>
+
+        <!-- Temperatur-Graph -->
+        <section id="temp-graph-section" class="glass rounded-2xl p-4 mt-5 relative">
+            <h2 class="text-xs opacity-60 uppercase tracking-wider mb-3">Temperaturverlauf</h2>
+            <svg id="temp-graph" viewBox="0 0 320 160" class="w-full" preserveAspectRatio="xMidYMid meet"></svg>
+            <div id="graph-tooltip" class="graph-tooltip absolute hidden bg-slate-900/90 backdrop-blur text-white text-xs rounded-lg px-3 py-2 shadow-lg z-10"></div>
         </section>
 
     </main>
@@ -290,7 +329,10 @@ function cacheDom() {
         citySubmitBtn:   document.getElementById('city-submit-btn'),
         cityCancelBtn:   document.getElementById('city-cancel-btn'),
         loadingOverlay:  document.getElementById('loading-overlay'),
-        errorDisplay:    document.getElementById('error-display')
+        errorDisplay:    document.getElementById('error-display'),
+        tempGraph:       document.getElementById('temp-graph'),
+        tempGraphSection:document.getElementById('temp-graph-section'),
+        graphTooltip:    document.getElementById('graph-tooltip')
     };
 }
 
@@ -412,6 +454,7 @@ function updateUI() {
     updateDetails();
     updateSunTimes();
     updateForecastList();
+    updateTemperatureGraph();
     updateLoadingState();
     updateErrorDisplay();
     updateCityOverlay();
@@ -419,17 +462,23 @@ function updateUI() {
 
 // ----------------------------------------
 // Funktion: updateTheme
-// Verantwortlichkeit: Schaltet Dark/Light-Klassen auf dem body-Element.
-// Verändert: DOM (body classList)
+// Verantwortlichkeit: Schaltet Dark/Light-Klassen auf body UND html (document.documentElement).
+// Verändert: DOM (body classList, html classList)
 // Verändert NICHT: state
+// Architektur-Hinweis: html braucht dieselbe Klasse, damit beim iOS-Overscroll kein weißer Rand erscheint.
 // ----------------------------------------
 function updateTheme() {
+    const root = document.documentElement;
     if (state.isDarkMode) {
         $.body.classList.add('theme-dark');
         $.body.classList.remove('theme-light');
+        root.classList.add('theme-dark');
+        root.classList.remove('theme-light');
     } else {
         $.body.classList.add('theme-light');
         $.body.classList.remove('theme-dark');
+        root.classList.add('theme-light');
+        root.classList.remove('theme-dark');
     }
 }
 
@@ -542,6 +591,225 @@ function updateForecastList() {
     }
 
     $.forecastList.replaceChildren.apply($.forecastList, items);
+}
+
+// ----------------------------------------
+// Funktion: updateTemperatureGraph
+// Verantwortlichkeit: Zeichnet den SVG-Temperatur-Graphen mit Linien, Punkten und Hover-Bereichen.
+// Verändert: DOM (temp-graph SVG Kindelemente)
+// Verändert NICHT: state
+// ----------------------------------------
+let _prevForecastKey = '';
+
+function updateTemperatureGraph() {
+    if (state.forecast.length === 0) return;
+
+    // Nur neu zeichnen wenn sich die Daten geändert haben
+    const key = state.forecast.map(function(d) { return d.tempMax + ',' + d.tempMin; }).join('|');
+    if (key === _prevForecastKey) return;
+    _prevForecastKey = key;
+
+    const svg = $.tempGraph;
+    const W = 320, H = 160;
+    const padL = 8, padR = 8, padT = 25, padB = 30;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+    const days = state.forecast;
+    const n = days.length;
+
+    // Temperatur-Range bestimmen
+    const allTemps = [];
+    for (let i = 0; i < n; i++) {
+        allTemps.push(days[i].tempMax);
+        allTemps.push(days[i].tempMin);
+    }
+    const tMin = Math.min.apply(null, allTemps) - 2;
+    const tMax = Math.max.apply(null, allTemps) + 2;
+    const tRange = tMax - tMin || 1;
+
+    function x(idx) { return padL + (plotW / (n - 1)) * idx; }
+    function y(temp) { return padT + plotH - ((temp - tMin) / tRange) * plotH; }
+
+    const NS = 'http://www.w3.org/2000/svg';
+
+    function el(tag, attrs) {
+        const node = document.createElementNS(NS, tag);
+        for (const k in attrs) {
+            if (attrs.hasOwnProperty(k)) node.setAttribute(k, attrs[k]);
+        }
+        return node;
+    }
+
+    const frag = document.createDocumentFragment();
+
+    // Horizontale Hilfslinien
+    const lineCount = 4;
+    for (let li = 0; li <= lineCount; li++) {
+        const yy = padT + (plotH / lineCount) * li;
+        const gridLine = el('line', {
+            x1: padL, y1: yy, x2: W - padR, y2: yy,
+            stroke: 'rgba(255,255,255,0.08)', 'stroke-width': '0.5'
+        });
+        frag.appendChild(gridLine);
+    }
+
+    // Pfad-Strings bauen
+    let maxPath = '', minPath = '';
+    for (let i = 0; i < n; i++) {
+        const px = x(i).toFixed(1);
+        const pyMax = y(days[i].tempMax).toFixed(1);
+        const pyMin = y(days[i].tempMin).toFixed(1);
+        maxPath += (i === 0 ? 'M' : 'L') + px + ',' + pyMax;
+        minPath += (i === 0 ? 'M' : 'L') + px + ',' + pyMin;
+    }
+
+    // Gefüllte Fläche zwischen Max und Min
+    let areaPath = maxPath;
+    for (let i = n - 1; i >= 0; i--) {
+        areaPath += 'L' + x(i).toFixed(1) + ',' + y(days[i].tempMin).toFixed(1);
+    }
+    areaPath += 'Z';
+
+    const gradient = el('defs', {});
+    const grad = el('linearGradient', { id: 'areaGrad', x1: '0', y1: '0', x2: '0', y2: '1' });
+    const stop1 = el('stop', { offset: '0%', 'stop-color': 'rgba(255,255,255,0.15)' });
+    const stop2 = el('stop', { offset: '100%', 'stop-color': 'rgba(255,255,255,0.02)' });
+    grad.appendChild(stop1);
+    grad.appendChild(stop2);
+    gradient.appendChild(grad);
+    frag.appendChild(gradient);
+
+    const area = el('path', {
+        d: areaPath,
+        fill: 'url(#areaGrad)'
+    });
+    frag.appendChild(area);
+
+    // Min-Linie
+    const minLine = el('path', {
+        d: minPath,
+        fill: 'none',
+        stroke: 'rgba(147,197,253,0.5)',
+        'stroke-width': '1.5',
+        'stroke-linecap': 'round',
+        'stroke-linejoin': 'round',
+        class: 'graph-line'
+    });
+    frag.appendChild(minLine);
+
+    // Max-Linie
+    const maxLine = el('path', {
+        d: maxPath,
+        fill: 'none',
+        stroke: 'rgba(255,255,255,0.9)',
+        'stroke-width': '2',
+        'stroke-linecap': 'round',
+        'stroke-linejoin': 'round',
+        class: 'graph-line'
+    });
+    frag.appendChild(maxLine);
+
+    // Punkte und Labels
+    for (let i = 0; i < n; i++) {
+        const cx = x(i);
+        const delay = (i * 0.08 + 0.4) + 's';
+
+        // Max-Punkt
+        const dotMax = el('circle', {
+            cx: cx.toFixed(1), cy: y(days[i].tempMax).toFixed(1), r: '3',
+            fill: 'white', class: 'graph-dot', style: 'animation-delay:' + delay
+        });
+        frag.appendChild(dotMax);
+
+        // Min-Punkt
+        const dotMin = el('circle', {
+            cx: cx.toFixed(1), cy: y(days[i].tempMin).toFixed(1), r: '2.5',
+            fill: 'rgba(147,197,253,0.7)', class: 'graph-dot', style: 'animation-delay:' + delay
+        });
+        frag.appendChild(dotMin);
+
+        // Tag-Label unten
+        const label = el('text', {
+            x: cx.toFixed(1), y: (H - 8).toString(),
+            'text-anchor': 'middle', fill: 'rgba(255,255,255,0.5)',
+            'font-size': '9', 'font-family': 'inherit'
+        });
+        label.textContent = formatDay(days[i].date);
+        frag.appendChild(label);
+
+        // Unsichtbarer Hover-Bereich
+        const hitArea = el('rect', {
+            x: (cx - plotW / n / 2).toFixed(1), y: padT.toString(),
+            width: (plotW / n).toFixed(1), height: plotH.toString(),
+            fill: 'transparent', 'data-index': i.toString(),
+            style: 'cursor:pointer'
+        });
+        hitArea.addEventListener('mouseenter', handleGraphHover);
+        hitArea.addEventListener('mousemove', handleGraphMove);
+        hitArea.addEventListener('mouseleave', handleGraphLeave);
+        hitArea.addEventListener('touchstart', handleGraphTouch, { passive: true });
+        frag.appendChild(hitArea);
+    }
+
+    svg.replaceChildren(frag);
+}
+
+// ----------------------------------------
+// Graph-Tooltip Handler
+// ----------------------------------------
+function handleGraphHover(e) {
+    const idx = parseInt(e.target.getAttribute('data-index'));
+    const day = state.forecast[idx];
+    if (!day) return;
+    const weather = mapWeatherCode(day.weatherCode, false);
+    $.graphTooltip.innerHTML =
+        '<div class="font-semibold mb-1">' + formatDay(day.date) + '</div>' +
+        '<div>' + weather.icon + ' ' + day.tempMax + '° / ' + day.tempMin + '°</div>' +
+        '<div class="opacity-60 mt-0.5">Wind ' + day.windSpeed + ' km/h · Regen ' + day.rainProbability + '%</div>';
+    $.graphTooltip.classList.remove('hidden');
+}
+
+function handleGraphMove(e) {
+    const section = $.tempGraphSection;
+    const rect = section.getBoundingClientRect();
+    const xPos = e.clientX - rect.left;
+    const yPos = e.clientY - rect.top;
+    const ttW = $.graphTooltip.offsetWidth;
+    let left = xPos - ttW / 2;
+    if (left < 8) left = 8;
+    if (left + ttW > rect.width - 8) left = rect.width - ttW - 8;
+    $.graphTooltip.style.left = left + 'px';
+    $.graphTooltip.style.top = (yPos - $.graphTooltip.offsetHeight - 10) + 'px';
+}
+
+function handleGraphLeave() {
+    $.graphTooltip.classList.add('hidden');
+}
+
+function handleGraphTouch(e) {
+    const touch = e.touches[0];
+    const idx = parseInt(e.target.getAttribute('data-index'));
+    const day = state.forecast[idx];
+    if (!day) return;
+    const weather = mapWeatherCode(day.weatherCode, false);
+    $.graphTooltip.innerHTML =
+        '<div class="font-semibold mb-1">' + formatDay(day.date) + '</div>' +
+        '<div>' + weather.icon + ' ' + day.tempMax + '° / ' + day.tempMin + '°</div>' +
+        '<div class="opacity-60 mt-0.5">Wind ' + day.windSpeed + ' km/h · Regen ' + day.rainProbability + '%</div>';
+    $.graphTooltip.classList.remove('hidden');
+
+    const section = $.tempGraphSection;
+    const rect = section.getBoundingClientRect();
+    const xPos = touch.clientX - rect.left;
+    const ttW = $.graphTooltip.offsetWidth;
+    let left = xPos - ttW / 2;
+    if (left < 8) left = 8;
+    if (left + ttW > rect.width - 8) left = rect.width - ttW - 8;
+    $.graphTooltip.style.left = left + 'px';
+    $.graphTooltip.style.top = '8px';
+
+    clearTimeout(handleGraphTouch._timer);
+    handleGraphTouch._timer = setTimeout(handleGraphLeave, 2000);
 }
 
 // ----------------------------------------
