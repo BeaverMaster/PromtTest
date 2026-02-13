@@ -11,6 +11,11 @@
     <title>Better</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
+        html, body {
+            height: 100%;
+            overflow: hidden;
+        }
+
         body {
             transition: background 0.5s ease;
             -webkit-tap-highlight-color: transparent;
@@ -105,8 +110,8 @@
          Keine Layout-Erzeugung im Script.
          Alle dynamischen Bereiche mit eindeutigen IDs.
          ======================================== -->
-    <main id="app" class="min-h-screen p-5 pt-14 pb-10 max-w-md mx-auto select-none overflow-y-auto"
-                   style="-webkit-overflow-scrolling: touch";>
+    <main id="app" class="h-full p-5 pt-14 pb-10 max-w-md mx-auto select-none overflow-y-auto"
+                   style="-webkit-overflow-scrolling: touch">
 
         <!-- Header: Stadtname + Steuerung -->
         <header id="header" class="text-center mb-8 relative">
@@ -1092,7 +1097,7 @@ function updateDayDetailSheet() {
 
     // Overlay anzeigen + Body sperren (Sheet-Panel startet bei translateY(100%))
     $.daySheetOverlay.classList.add('sheet-active');
-    $.app.style.overflow = 'hidden';
+    $.app.style.overflowY = 'hidden';
 }
 
 // ----------------------------------------
@@ -1534,7 +1539,7 @@ function handleForecastDayClick(e) {
 // ----------------------------------------
 function handleCloseDaySheet() {
     state.isSheetOpen = false;
-    $.app.style.overflow = 'hidden';
+    $.app.style.overflowY = 'auto';
     $.daySheet.classList.remove('sheet-open');
     // Highlight + Tooltip aufräumen
     handleDayGraphLeave($.dayTempGraph);
