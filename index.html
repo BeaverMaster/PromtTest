@@ -59,6 +59,10 @@
             pointer-events: none;
             transition: opacity 0.15s ease, transform 0.15s ease;
         }
+
+        #hourly-scroll::-webkit-scrollbar {
+            display: none;
+        }
     </style>
 </head>
 <body class="theme-light min-h-screen text-white font-sans">
@@ -115,8 +119,19 @@
             </div>
         </section>
 
+        <section id="hourly-section" class="mb-6 glass rounded-2xl p-4 text-center">
+            <div id="hourly-scroll" class="flex gap-4 overflow-x-auto no-scrollbar px-1"></div>
+        </section>
+
+        <!-- 10-Tage-Vorhersage -->
+        <section id="forecast" class="glass rounded-2xl p-4">
+            <h2 class="text-xs opacity-60 uppercase tracking-wider mb-3">10-Tage-Vorhersage</h2>
+            <div id="forecast-list" class="divide-y divide-white/10"></div>
+        </section>
+
+
         <!-- Sonnenzeiten -->
-        <section id="sun-times" class="glass rounded-2xl p-4 mb-5 flex justify-around">
+        <section id="sun-times" class="glass rounded-2xl p-4 mb-5 mt-5 flex justify-around">
             <div class="text-center">
                 <div class="text-xs opacity-60 uppercase tracking-wider mb-1">☀ Aufgang</div>
                 <div id="sunrise" class="text-xl font-semibold">—</div>
@@ -126,12 +141,6 @@
                 <div class="text-xs opacity-60 uppercase tracking-wider mb-1">☽ Untergang</div>
                 <div id="sunset" class="text-xl font-semibold">—</div>
             </div>
-        </section>
-
-        <!-- 10-Tage-Vorhersage -->
-        <section id="forecast" class="glass rounded-2xl p-4">
-            <h2 class="text-xs opacity-60 uppercase tracking-wider mb-3">10-Tage-Vorhersage</h2>
-            <div id="forecast-list" class="divide-y divide-white/10"></div>
         </section>
 
         <!-- Temperatur-Graph -->
@@ -287,7 +296,8 @@ const state = {
     isLoading: false,
     error: null,
     showCityInput: false,
-    cityInputValue: ''
+    cityInputValue: '',
+    hourly: []
 };
 
 
@@ -330,7 +340,8 @@ function cacheDom() {
         errorDisplay:    document.getElementById('error-display'),
         tempGraph:       document.getElementById('temp-graph'),
         tempGraphSection:document.getElementById('temp-graph-section'),
-        graphTooltip:    document.getElementById('graph-tooltip')
+        graphTooltip:    document.getElementById('graph-tooltip'),
+        hourlyScroll: document.getElementById('hourly-scroll')
     };
 }
 
@@ -391,6 +402,7 @@ function setWeatherData(data) {
 
     state.isLoading = false;
     state.error = null;
+    state.hourly = buildHourlyForecast(data.hourly);
     updateUI();
 }
 
@@ -451,12 +463,101 @@ function updateUI() {
     updateCurrentWeather();
     updateDetails();
     updateSunTimes();
+    updateHourlyForecast();
     updateForecastList();
     updateTemperatureGraph();
     updateLoadingState();
     updateErrorDisplay();
     updateCityOverlay();
 }
+
+function buildHourlyForecast(hourlyData) {
+    const now = new Date();
+    const result = [];
+
+    let startIndex = -1;
+
+    for (let i = 0; i < hourlyData.time.length; i++) {
+        const t = new Date(hourlyData.time[i]);
+        if (t > now) {
+            startIndex = i;
+            break;
+        }
+    }
+
+    if (startIndex === -1) return [];
+
+    const slice = hourlyData.time.slice(startIndex, startIndex + 24);
+
+    for (let i = 0; i < slice.length; i++) {
+        result.push({
+            timeISO: hourlyData.time[startIndex + i],
+            temperature: Math.round(hourlyData.temperature_2m[startIndex + i]),
+            weatherCode: hourlyData.weather_code[startIndex + i],
+            isNow: i === 0
+        });
+    }
+
+    return result;
+}
+
+function updateHourlyForecast() {
+    if (!state.hourly || state.hourly.length === 0) {
+        $.hourlyScroll.replaceChildren();
+        return;
+    }
+
+    const items = [];
+
+    for (let i = 0; i < state.hourly.length; i++) {
+        const hour = state.hourly[i];
+
+        const container = document.createElement('div');
+        container.classList.add(
+            'flex',
+            'flex-col',
+            'items-center',
+            'min-w-[56px]',
+            'text-center'
+        );
+
+        // Zeitlabel
+        const timeLabel = document.createElement('span');
+        timeLabel.classList.add('text-xs', 'opacity-60', 'mb-1');
+
+        if (hour.isNow) {
+            timeLabel.textContent = 'Jetzt';
+        } else {
+            const d = new Date(hour.timeISO);
+            timeLabel.textContent = d.toLocaleTimeString('de-DE', {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        // Icon
+        const weather = mapWeatherCode(hour.weatherCode, false);
+
+        const icon = document.createElement('span');
+        icon.classList.add('text-2xl', 'mb-1');
+        icon.textContent = weather.icon;
+
+        // Temperatur
+        const temp = document.createElement('span');
+        temp.classList.add('text-sm', 'font-medium');
+        temp.textContent = hour.temperature + '°';
+
+        container.appendChild(timeLabel);
+        container.appendChild(icon);
+        container.appendChild(temp);
+
+        items.push(container);
+    }
+
+    $.hourlyScroll.replaceChildren(...items);
+}
+
+
 
 // ----------------------------------------
 // Funktion: updateTheme
@@ -990,7 +1091,8 @@ async function fetchWeather() {
         + '&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m'
         + '&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max,wind_speed_10m_max'
         + '&timezone=auto'
-        + '&forecast_days=10';
+        + '&forecast_days=10'
+        + '&hourly=temperature_2m,weather_code';
 
     try {
         const response = await fetch(url);
