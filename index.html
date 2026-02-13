@@ -1073,7 +1073,6 @@ function updateDayDetailSheet() {
     if (state.selectedDayIndex === null) {
         if (!state.isSheetOpen) {
             $.daySheetOverlay.classList.remove('sheet-active');
-            unlockBodyScroll();
         }
         return;
     }
