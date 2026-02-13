@@ -85,6 +85,7 @@
             will-change: transform;
             overscroll-behavior: contain;
             -webkit-overflow-scrolling: touch;
+            overflow-y: auto;
         }
         #day-sheet.sheet-open {
             transform: translateY(0);
@@ -111,8 +112,7 @@
          Keine Layout-Erzeugung im Script.
          Alle dynamischen Bereiche mit eindeutigen IDs.
          ======================================== -->
-    <main id="app" class="h-full p-5 pt-14 pb-10 max-w-md mx-auto select-none overflow-y-auto"
-                   style="-webkit-overflow-scrolling: touch">
+    <main id="app" class="h-full p-5 pt-14 pb-10 max-w-md mx-auto select-none">
 
         <!-- Header: Stadtname + Steuerung -->
         <header id="header" class="text-center mb-8 relative">
