@@ -1690,6 +1690,11 @@ function bindEvents() {
     $.daySheetHandle.addEventListener('pointerup', handleSheetPointerUp);
     $.daySheetHandle.addEventListener('pointercancel', handleSheetPointerUp);
 
+    // iOS: Touch-Scrolling im Sheet komplett unterbinden
+    $.daySheet.addEventListener('touchmove', function(e) {
+        e.preventDefault();
+    }, { passive: false });
+
     // Graph-Interaktion: Temperatur-Graph
     $.dayTempGraph.addEventListener('pointermove', function handleTempPointer(e) {
         handleDayGraphPointer(e, $.dayTempGraph, _dayTempLayout, function(d, L) {
