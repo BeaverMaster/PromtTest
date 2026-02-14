@@ -105,8 +105,8 @@
             z-index: 60;
         }
         #app {
-            position: absolute;
-            inset: 0;
+            position: relative;
+            height: 100%;
             overflow-y: auto;
             -webkit-overflow-scrolling: touch;
             overscroll-behavior-y: contain;
@@ -114,7 +114,7 @@
 
     </style>
 </head>
-<body class="theme-light min-h-screen text-white font-sans">
+<body class="theme-light text-white font-sans">
 
     <!-- iOS Overscroll-Fix: Fester Hintergrund-Layer, verhindert weißen Rand beim Rubber-Banding -->
     <div id="background-layer" class="background-layer"></div>
