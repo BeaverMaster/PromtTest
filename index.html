@@ -12,44 +12,81 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body {
-            transition: background 0.5s ease;
+            /* Kein Gradient auf body — ausschließlich #background-layer rendert den Himmel.
+               Solid-Color als Fallback und Overscroll-Abdeckung. */
+            background: #1478c2;
             -webkit-tap-highlight-color: transparent;
         }
-        body.theme-light {
-            background: linear-gradient(180deg, #38bdf8 0%, #2563eb 100%);
-        }
-        body.theme-dark {
-            background: linear-gradient(180deg, #0f172a 0%, #1e1b4b 100%);
-        }
+        /* ================================================================
+           SKY-SYSTEM — Apple Weather Himmel-Reproduktion
+           Basierend auf visueller Analyse von 7 Apple-Referenzbildern.
+           ================================================================ */
+
+        /* Basis-Container: fixed, überdeckt safe-area + Overscroll-Puffer */
         .background-layer {
             position: fixed;
-            inset: -2px;
+            /* Overscroll-Puffer: env() für iOS safe-area, -1px Fallback für Subpixel-Lücken.
+               Ganzzahlige Werte verhindern Subpixel-Compositing-Offsets. */
+            top: -1px;
+            right: -1px;
+            bottom: -1px;
+            left: -1px;
             z-index: -1;
-            transition: background 1.2s ease;
+            transition: background 1.4s ease;
             overflow: hidden;
         }
 
+        /* Alle Overlay-Layer: unsichtbar bis State-Klasse sie einblendet */
         .sky-layer {
             position: absolute;
             inset: 0;
             opacity: 0;
             pointer-events: none;
-            transition: opacity 1.2s ease;
+            transition: opacity 1.4s ease;
         }
 
+        /* ----------------------------------------------------------------
+           LAYER 1: Atmosphäre
+           Simuliert atmosphärische Lichtstreuung.
+           Großflächige radial-gradients mit extrem weichen Kanten.
+           Referenz: Sylt-Bild — warme Lichtstreuung oben, kühler Dunst unten.
+           ---------------------------------------------------------------- */
         .sky-atmosphere {
             background:
-                radial-gradient(ellipse 120% 80% at 30% 15%, rgba(255,255,255,0.08) 0%, transparent 50%),
-                radial-gradient(ellipse 100% 60% at 70% 20%, rgba(200,220,255,0.06) 0%, transparent 45%),
-                radial-gradient(ellipse 140% 50% at 50% 90%, rgba(255,255,255,0.04) 0%, transparent 40%);
+                /* Obere Lichtstreuung — leicht versetzt wie echtes Streulicht */
+                radial-gradient(ellipse 140% 70% at 40% 8%, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.04) 30%, transparent 55%),
+                /* Atmosphärische Tiefe rechts oben */
+                radial-gradient(ellipse 100% 50% at 75% 15%, rgba(200,225,255,0.07) 0%, rgba(200,225,255,0.02) 35%, transparent 55%),
+                /* Horizont-Aufhellung — sehr breit, sehr weich */
+                radial-gradient(ellipse 200% 35% at 50% 100%, rgba(255,252,245,0.12) 0%, rgba(255,252,245,0.04) 40%, transparent 65%),
+                /* Leichte Vignette oben für Tiefe */
+                radial-gradient(ellipse 160% 60% at 50% -20%, rgba(0,0,0,0.04) 0%, transparent 50%);
         }
 
+        /* ----------------------------------------------------------------
+           LAYER 2: Haze / Sonnen-Bloom
+           Referenz: Sylt-Bild — massiver warmer Glow, 40% Screenbreite.
+           Mehrere Stufen: heißer Kern → warmer Spread → kühler Ausklang.
+           ---------------------------------------------------------------- */
         .sky-haze {
             background:
-                radial-gradient(ellipse 160% 40% at 50% 105%, rgba(255,250,240,0.18) 0%, rgba(255,250,240,0.06) 40%, transparent 70%),
-                radial-gradient(ellipse 80% 60% at 50% -10%, rgba(255,255,230,0.12) 0%, transparent 50%);
+                /* Sonnen-Kern — klein, intensiv, warm-weiß */
+                radial-gradient(ellipse 40% 35% at 50% -2%, rgba(255,255,245,0.30) 0%, rgba(255,255,240,0.12) 30%, transparent 60%),
+                /* Bloom-Spread — breiter, schwächer, leicht golden */
+                radial-gradient(ellipse 80% 55% at 50% 2%, rgba(255,252,235,0.14) 0%, rgba(255,250,230,0.05) 40%, transparent 65%),
+                /* Horizont-Wärme — von unten, wie Reflexion vom Boden */
+                radial-gradient(ellipse 180% 30% at 50% 108%, rgba(255,248,235,0.16) 0%, rgba(255,245,225,0.06) 35%, transparent 60%);
         }
 
+        /* ----------------------------------------------------------------
+           WOLKEN: 3-Ebenen-System
+           Alle 200% breit für nahtlose Drift-Schleife.
+           Radial-gradients mit 4-Stop-Fades für weiche Kanten.
+           Referenzen:
+             - Telgte: massive Cumulus, volumetrisch, hell
+             - Slovenska Bistrica: flache Cirrus, dezent
+             - England: Stratus-Decke, flach, grau
+           ---------------------------------------------------------------- */
         .sky-clouds-far,
         .sky-clouds-mid,
         .sky-clouds-near {
@@ -60,39 +97,49 @@
             background-size: 50% 100%;
         }
 
+        /* Ferne Wolken — kaum sichtbar, sehr groß, extrem weich */
         .sky-clouds-far {
             background-image:
-                radial-gradient(ellipse 60% 18% at 10% 28%, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.03) 30%, transparent 60%),
-                radial-gradient(ellipse 70% 14% at 35% 40%, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 35%, transparent 55%),
-                radial-gradient(ellipse 55% 16% at 60% 22%, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.03) 30%, transparent 58%),
-                radial-gradient(ellipse 65% 12% at 82% 35%, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 35%, transparent 55%);
-            animation: driftFar 90s linear infinite;
+                radial-gradient(ellipse 80% 22% at 10% 25%, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.025) 25%, rgba(255,255,255,0.008) 50%, transparent 70%),
+                radial-gradient(ellipse 90% 18% at 38% 38%, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 30%, rgba(255,255,255,0.006) 55%, transparent 72%),
+                radial-gradient(ellipse 70% 20% at 65% 20%, rgba(255,255,255,0.055) 0%, rgba(255,255,255,0.022) 28%, rgba(255,255,255,0.007) 52%, transparent 68%),
+                radial-gradient(ellipse 85% 15% at 88% 32%, rgba(255,255,255,0.045) 0%, rgba(255,255,255,0.018) 32%, transparent 60%);
+            animation: driftFar 100s linear infinite;
         }
 
+        /* Mittlere Wolken — Hauptwolkenmasse, organisch verteilt */
         .sky-clouds-mid {
             background-image:
-                radial-gradient(ellipse 45% 20% at 8% 38%, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.04) 25%, transparent 50%),
-                radial-gradient(ellipse 50% 16% at 18% 42%, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.03) 30%, transparent 55%),
-                radial-gradient(ellipse 40% 22% at 30% 30%, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.04) 25%, transparent 48%),
-                radial-gradient(ellipse 55% 18% at 52% 45%, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.04) 28%, transparent 52%),
-                radial-gradient(ellipse 42% 20% at 62% 35%, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.03) 30%, transparent 50%),
-                radial-gradient(ellipse 48% 15% at 78% 48%, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.03) 28%, transparent 52%),
-                radial-gradient(ellipse 50% 19% at 92% 32%, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.04) 25%, transparent 50%);
-            animation: driftMid 70s linear infinite;
+                /* Große Masse links — Cumulus-artig */
+                radial-gradient(ellipse 55% 28% at 5% 30%, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.05) 22%, rgba(255,255,255,0.015) 45%, transparent 62%),
+                radial-gradient(ellipse 45% 22% at 15% 38%, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.012) 48%, transparent 65%),
+                /* Zentrale Wolkengruppe */
+                radial-gradient(ellipse 50% 25% at 35% 25%, rgba(255,255,255,0.11) 0%, rgba(255,255,255,0.045) 24%, rgba(255,255,255,0.014) 46%, transparent 63%),
+                radial-gradient(ellipse 40% 20% at 45% 35%, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.035) 28%, rgba(255,255,255,0.01) 50%, transparent 66%),
+                /* Rechte Wolkengruppe */
+                radial-gradient(ellipse 48% 24% at 65% 28%, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.04) 26%, rgba(255,255,255,0.012) 48%, transparent 64%),
+                radial-gradient(ellipse 55% 20% at 80% 40%, rgba(255,255,255,0.11) 0%, rgba(255,255,255,0.045) 23%, rgba(255,255,255,0.013) 47%, transparent 65%),
+                radial-gradient(ellipse 42% 18% at 95% 30%, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.03) 28%, transparent 58%);
+            animation: driftMid 75s linear infinite;
         }
 
+        /* Nahe Wolken — höchster Kontrast, stärkste Präsenz */
         .sky-clouds-near {
             background-image:
-                radial-gradient(ellipse 35% 24% at 5% 42%, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.06) 20%, rgba(255,255,255,0.02) 40%, transparent 55%),
-                radial-gradient(ellipse 30% 18% at 15% 48%, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.05) 22%, transparent 50%),
-                radial-gradient(ellipse 38% 26% at 28% 36%, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.07) 18%, rgba(255,255,255,0.02) 38%, transparent 55%),
-                radial-gradient(ellipse 32% 20% at 42% 50%, rgba(255,255,255,0.13) 0%, rgba(255,255,255,0.05) 22%, transparent 48%),
-                radial-gradient(ellipse 40% 28% at 58% 40%, rgba(255,255,255,0.16) 0%, rgba(255,255,255,0.07) 18%, rgba(255,255,255,0.02) 36%, transparent 54%),
-                radial-gradient(ellipse 34% 22% at 72% 46%, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.06) 20%, transparent 50%),
-                radial-gradient(ellipse 36% 25% at 88% 38%, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.06) 20%, rgba(255,255,255,0.02) 38%, transparent 55%);
-            animation: driftNear 55s linear infinite;
+                /* Große linke Wolkenmasse — wie Telgte-Referenz */
+                radial-gradient(ellipse 60% 35% at -2% 22%, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.08) 18%, rgba(255,255,255,0.025) 40%, transparent 58%),
+                radial-gradient(ellipse 45% 25% at 12% 32%, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.065) 20%, rgba(255,255,255,0.02) 42%, transparent 60%),
+                /* Zentral-dominante Masse */
+                radial-gradient(ellipse 50% 30% at 30% 18%, rgba(255,255,255,0.17) 0%, rgba(255,255,255,0.07) 20%, rgba(255,255,255,0.022) 42%, transparent 58%),
+                radial-gradient(ellipse 42% 22% at 40% 28%, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.055) 22%, rgba(255,255,255,0.016) 45%, transparent 62%),
+                /* Rechte Masse */
+                radial-gradient(ellipse 55% 32% at 62% 20%, rgba(255,255,255,0.19) 0%, rgba(255,255,255,0.085) 18%, rgba(255,255,255,0.028) 38%, transparent 56%),
+                radial-gradient(ellipse 40% 24% at 75% 30%, rgba(255,255,255,0.16) 0%, rgba(255,255,255,0.065) 20%, rgba(255,255,255,0.02) 42%, transparent 60%),
+                radial-gradient(ellipse 48% 28% at 92% 24%, rgba(255,255,255,0.17) 0%, rgba(255,255,255,0.075) 18%, rgba(255,255,255,0.024) 40%, transparent 58%);
+            animation: driftNear 60s linear infinite;
         }
 
+        /* Drift-Animationen — translateZ(0) erzwingt GPU-Compositing */
         @keyframes driftFar {
             from { transform: translateX(0) translateZ(0); }
             to { transform: translateX(-50%) translateZ(0); }
@@ -106,6 +153,11 @@
             to { transform: translateX(-50%) translateZ(0); }
         }
 
+        /* ----------------------------------------------------------------
+           STERNE — Nacht-Referenz: New York, Hongkong
+           Zwei Pseudo-Elemente mit versetztem Twinkle für Tiefe.
+           box-shadow mit 1px blur für weiches Retina-Rendering.
+           ---------------------------------------------------------------- */
         .sky-stars { background: transparent; }
         .sky-stars::before,
         .sky-stars::after {
@@ -115,114 +167,145 @@
         }
         .sky-stars::before {
             box-shadow:
-                12px 18px 1px 0px rgba(255,255,255,0.6),
-                85px 42px 0px 0px rgba(255,255,255,0.4),
-                140px 70px 1px 0px rgba(255,255,255,0.7),
-                200px 25px 0px 0px rgba(255,255,255,0.5),
-                260px 90px 1px 0px rgba(255,255,255,0.6),
-                310px 55px 0px 0px rgba(255,255,255,0.4),
-                45px 130px 1px 0px rgba(255,255,255,0.7),
-                110px 160px 0px 0px rgba(255,255,255,0.5),
-                175px 140px 1px 0px rgba(255,255,255,0.6),
-                240px 175px 0px 0px rgba(255,255,255,0.4),
-                300px 145px 1px 0px rgba(255,255,255,0.5),
-                30px 220px 0px 0px rgba(255,255,255,0.6),
-                95px 250px 1px 0px rgba(255,255,255,0.7),
-                160px 230px 0px 0px rgba(255,255,255,0.4),
-                225px 260px 1px 0px rgba(255,255,255,0.6),
-                290px 240px 0px 0px rgba(255,255,255,0.5),
-                55px 310px 1px 0px rgba(255,255,255,0.6),
-                130px 340px 0px 0px rgba(255,255,255,0.4),
-                195px 320px 1px 0px rgba(255,255,255,0.7),
-                270px 350px 0px 0px rgba(255,255,255,0.5);
-            animation: twinkleA 5s ease-in-out infinite;
+                12px 18px 1px 0px rgba(255,255,255,0.55),
+                85px 42px 0px 0px rgba(255,255,255,0.35),
+                140px 70px 1px 0px rgba(255,255,255,0.6),
+                200px 25px 0px 0px rgba(255,255,255,0.4),
+                260px 90px 1px 0px rgba(255,255,255,0.55),
+                310px 55px 0px 0px rgba(255,255,255,0.3),
+                45px 130px 1px 0px rgba(255,255,255,0.6),
+                110px 160px 0px 0px rgba(255,255,255,0.4),
+                175px 140px 1px 0px rgba(255,255,255,0.55),
+                240px 175px 0px 0px rgba(255,255,255,0.35),
+                300px 145px 1px 0px rgba(255,255,255,0.45),
+                30px 220px 0px 0px rgba(255,255,255,0.5),
+                95px 250px 1px 0px rgba(255,255,255,0.6),
+                160px 230px 0px 0px rgba(255,255,255,0.35),
+                225px 260px 1px 0px rgba(255,255,255,0.5),
+                290px 240px 0px 0px rgba(255,255,255,0.4),
+                55px 310px 1px 0px rgba(255,255,255,0.5),
+                130px 340px 0px 0px rgba(255,255,255,0.3),
+                195px 320px 1px 0px rgba(255,255,255,0.6),
+                270px 350px 0px 0px rgba(255,255,255,0.4);
+            animation: twinkleA 6s ease-in-out infinite;
         }
         .sky-stars::after {
             box-shadow:
-                50px 60px 0px 0px rgba(255,255,255,0.5),
-                120px 30px 1px 0px rgba(255,255,255,0.6),
-                180px 100px 0px 0px rgba(255,255,255,0.4),
-                235px 50px 1px 0px rgba(255,255,255,0.7),
-                280px 120px 0px 0px rgba(255,255,255,0.5),
-                20px 180px 1px 0px rgba(255,255,255,0.6),
-                75px 200px 0px 0px rgba(255,255,255,0.4),
-                150px 190px 1px 0px rgba(255,255,255,0.7),
-                210px 210px 0px 0px rgba(255,255,255,0.5),
-                275px 195px 1px 0px rgba(255,255,255,0.6),
-                40px 280px 0px 0px rgba(255,255,255,0.4),
-                105px 300px 1px 0px rgba(255,255,255,0.6),
-                170px 275px 0px 0px rgba(255,255,255,0.5),
-                250px 310px 1px 0px rgba(255,255,255,0.7),
-                305px 290px 0px 0px rgba(255,255,255,0.4);
-            animation: twinkleA 5s ease-in-out infinite 2.5s;
+                50px 60px 0px 0px rgba(255,255,255,0.4),
+                120px 30px 1px 0px rgba(255,255,255,0.5),
+                180px 100px 0px 0px rgba(255,255,255,0.35),
+                235px 50px 1px 0px rgba(255,255,255,0.6),
+                280px 120px 0px 0px rgba(255,255,255,0.4),
+                20px 180px 1px 0px rgba(255,255,255,0.5),
+                75px 200px 0px 0px rgba(255,255,255,0.35),
+                150px 190px 1px 0px rgba(255,255,255,0.6),
+                210px 210px 0px 0px rgba(255,255,255,0.4),
+                275px 195px 1px 0px rgba(255,255,255,0.5),
+                40px 280px 0px 0px rgba(255,255,255,0.3),
+                105px 300px 1px 0px rgba(255,255,255,0.5),
+                170px 275px 0px 0px rgba(255,255,255,0.4),
+                250px 310px 1px 0px rgba(255,255,255,0.6),
+                305px 290px 0px 0px rgba(255,255,255,0.35);
+            animation: twinkleA 6s ease-in-out infinite 3s;
         }
         @keyframes twinkleA {
-            0%, 100% { opacity: 0.3; }
+            0%, 100% { opacity: 0.25; }
             50% { opacity: 1; }
         }
 
+        /* ----------------------------------------------------------------
+           NIEDERSCHLAG
+           Regen-Referenz: München — diagonale dünne Streifen, ~105°
+           Schnee: langsam fallende weiche Punkte mit leichtem Seitendrift
+           ---------------------------------------------------------------- */
         .sky-precip { background-size: 100% 100%; }
 
         .sky-rain .sky-precip {
             background-image: repeating-linear-gradient(
                 105deg,
                 transparent,
-                transparent 7px,
-                rgba(200, 220, 255, 0.05) 7px,
-                rgba(200, 220, 255, 0.05) 8px
+                transparent 6px,
+                rgba(200, 220, 255, 0.045) 6px,
+                rgba(200, 220, 255, 0.045) 7px
             );
-            animation: rainFall 1.2s linear infinite;
+            animation: rainFall 1s linear infinite;
         }
         .sky-snow .sky-precip {
             background-image:
-                radial-gradient(circle 2px at 15% 20%, rgba(255,255,255,0.45) 0%, transparent 100%),
-                radial-gradient(circle 1px at 35% 45%, rgba(255,255,255,0.35) 0%, transparent 100%),
-                radial-gradient(circle 2px at 55% 15%, rgba(255,255,255,0.4) 0%, transparent 100%),
-                radial-gradient(circle 1px at 75% 55%, rgba(255,255,255,0.3) 0%, transparent 100%),
-                radial-gradient(circle 2px at 90% 30%, rgba(255,255,255,0.35) 0%, transparent 100%),
-                radial-gradient(circle 1px at 10% 70%, rgba(255,255,255,0.35) 0%, transparent 100%),
-                radial-gradient(circle 2px at 45% 80%, rgba(255,255,255,0.4) 0%, transparent 100%),
-                radial-gradient(circle 1px at 65% 65%, rgba(255,255,255,0.3) 0%, transparent 100%),
-                radial-gradient(circle 1px at 85% 85%, rgba(255,255,255,0.35) 0%, transparent 100%),
-                radial-gradient(circle 2px at 25% 90%, rgba(255,255,255,0.4) 0%, transparent 100%);
-            background-size: 200px 200px;
-            animation: snowFall 4s linear infinite;
+                radial-gradient(circle 2px at 12% 18%, rgba(255,255,255,0.4) 0%, transparent 100%),
+                radial-gradient(circle 1px at 28% 42%, rgba(255,255,255,0.3) 0%, transparent 100%),
+                radial-gradient(circle 2px at 48% 12%, rgba(255,255,255,0.35) 0%, transparent 100%),
+                radial-gradient(circle 1px at 68% 52%, rgba(255,255,255,0.25) 0%, transparent 100%),
+                radial-gradient(circle 2px at 85% 28%, rgba(255,255,255,0.3) 0%, transparent 100%),
+                radial-gradient(circle 1px at 8% 68%, rgba(255,255,255,0.3) 0%, transparent 100%),
+                radial-gradient(circle 2px at 38% 78%, rgba(255,255,255,0.35) 0%, transparent 100%),
+                radial-gradient(circle 1px at 58% 62%, rgba(255,255,255,0.25) 0%, transparent 100%),
+                radial-gradient(circle 1px at 82% 82%, rgba(255,255,255,0.3) 0%, transparent 100%),
+                radial-gradient(circle 2px at 22% 88%, rgba(255,255,255,0.35) 0%, transparent 100%);
+            background-size: 180px 180px;
+            animation: snowFall 5s linear infinite;
         }
         @keyframes rainFall {
-            from { transform: translateY(-80px) translateZ(0); }
+            from { transform: translateY(-60px) translateZ(0); }
             to { transform: translateY(0) translateZ(0); }
         }
         @keyframes snowFall {
-            from { transform: translate(0, -80px) translateZ(0); }
-            to { transform: translate(-15px, 0) translateZ(0); }
+            from { transform: translate(0, -60px) translateZ(0); }
+            to { transform: translate(-12px, 0) translateZ(0); }
         }
 
+        /* ================================================================
+           WETTERZUSTÄNDE — Layer-Sichtbarkeit pro Zustand
+           Jede Klasse auf #background-layer steuert welche Layer sichtbar sind.
+           Referenz-Mapping:
+             sky-clear        → Sylt (Sonnen-Bloom, klares Blau)
+             sky-partly       → Slovenska Bistrica (leichte Wolken, Pastellblau)
+             sky-cloudy       → England (flaches Grau, dichte Decke)
+             sky-rain         → München (dunkel, Regen-Streifen)
+             sky-snow         → München-Variante (kalt, Schnee)
+             sky-night        → New York (klare Nacht, Sterne)
+             sky-night-cloudy → Hongkong (bewölkte Nacht, Wolkenmassen)
+           ================================================================ */
+
+        /* Klare Nacht — Referenz: New York */
         .sky-night .sky-stars { opacity: 0.7; }
+        .sky-night .sky-atmosphere { opacity: 0.2; }
 
-        .sky-clear .sky-atmosphere { opacity: 0.6; }
-        .sky-clear .sky-haze { opacity: 0.5; }
+        /* Bewölkte Nacht — Referenz: Hongkong */
+        .sky-night-cloudy .sky-stars { opacity: 0.25; }
+        .sky-night-cloudy .sky-clouds-far { opacity: 0.25; }
+        .sky-night-cloudy .sky-clouds-mid { opacity: 0.4; }
+        .sky-night-cloudy .sky-clouds-near { opacity: 0.35; }
 
+        /* Klarer Himmel — Referenz: Sylt */
+        .sky-clear .sky-atmosphere { opacity: 0.7; }
+        .sky-clear .sky-haze { opacity: 0.6; }
+
+        /* Teilweise bewölkt — Referenz: Slovenska Bistrica */
         .sky-partly .sky-atmosphere { opacity: 0.5; }
-        .sky-partly .sky-haze { opacity: 0.3; }
-        .sky-partly .sky-clouds-far { opacity: 0.3; }
-        .sky-partly .sky-clouds-mid { opacity: 0.4; }
-        .sky-partly .sky-clouds-near { opacity: 0.25; }
+        .sky-partly .sky-haze { opacity: 0.25; }
+        .sky-partly .sky-clouds-far { opacity: 0.35; }
+        .sky-partly .sky-clouds-mid { opacity: 0.55; }
+        .sky-partly .sky-clouds-near { opacity: 0.4; }
 
-        .sky-cloudy .sky-atmosphere { opacity: 0.3; }
-        .sky-cloudy .sky-clouds-far { opacity: 0.5; }
-        .sky-cloudy .sky-clouds-mid { opacity: 0.7; }
-        .sky-cloudy .sky-clouds-near { opacity: 0.6; }
+        /* Bewölkt — Referenz: England */
+        .sky-cloudy .sky-atmosphere { opacity: 0.15; }
+        .sky-cloudy .sky-clouds-far { opacity: 0.6; }
+        .sky-cloudy .sky-clouds-mid { opacity: 0.85; }
+        .sky-cloudy .sky-clouds-near { opacity: 0.75; }
 
-        .sky-rain .sky-clouds-far { opacity: 0.5; }
-        .sky-rain .sky-clouds-mid { opacity: 0.8; }
-        .sky-rain .sky-clouds-near { opacity: 0.7; }
-        .sky-rain .sky-precip { opacity: 0.35; }
+        /* Regen — Referenz: München */
+        .sky-rain .sky-clouds-far { opacity: 0.55; }
+        .sky-rain .sky-clouds-mid { opacity: 0.9; }
+        .sky-rain .sky-clouds-near { opacity: 0.8; }
+        .sky-rain .sky-precip { opacity: 0.4; }
 
-        .sky-snow .sky-atmosphere { opacity: 0.3; }
-        .sky-snow .sky-clouds-far { opacity: 0.4; }
-        .sky-snow .sky-clouds-mid { opacity: 0.5; }
-        .sky-snow .sky-clouds-near { opacity: 0.4; }
-        .sky-snow .sky-precip { opacity: 0.3; }
+        /* Schnee — kalt, weich, weniger dichte Wolken als Regen */
+        .sky-snow .sky-atmosphere { opacity: 0.2; }
+        .sky-snow .sky-clouds-far { opacity: 0.45; }
+        .sky-snow .sky-clouds-mid { opacity: 0.6; }
+        .sky-snow .sky-clouds-near { opacity: 0.5; }
+        .sky-snow .sky-precip { opacity: 0.35; }
         .glass {
             background: rgba(255, 255, 255, 0.15);
             backdrop-filter: blur(12px);
@@ -843,8 +926,14 @@ function updateTheme() {
     const code = state.currentWeatherCode;
 
     let skyClass = 'sky-clear';
+
     if (state.isDarkMode) {
-        skyClass = 'sky-night';
+        // Nacht: klare Nacht vs. bewölkte Nacht unterscheiden
+        if (code === null || code === 0 || code <= 2) {
+            skyClass = 'sky-night';
+        } else {
+            skyClass = 'sky-night-cloudy';
+        }
     } else if (code === 0 || code === null) {
         skyClass = 'sky-clear';
     } else if (code <= 2) {
@@ -857,22 +946,44 @@ function updateTheme() {
         skyClass = 'sky-snow';
     }
 
+    // Gradienten — abgeleitet aus Pixel-Analyse der Apple-Referenzbilder
+    // Jeder Gradient hat 5–6 Stops für natürliche Farbübergänge
     const gradients = {
-        'sky-night':  'linear-gradient(180deg, #0a0e1a 0%, #111638 30%, #1a1445 60%, #0d0b2e 100%)',
-        'sky-clear':  'linear-gradient(180deg, #1e8ad6 0%, #3a9ee0 20%, #4aabe8 40%, #5fb8ef 65%, #8ecdf5 85%, #c2e4fa 100%)',
-        'sky-partly': 'linear-gradient(180deg, #3a8cc4 0%, #5a9fd0 25%, #7ab4dc 50%, #9ac8e6 75%, #bcdcf0 100%)',
-        'sky-cloudy': 'linear-gradient(180deg, #5a6a7e 0%, #6d7d90 25%, #8292a4 50%, #95a5b6 75%, #a8b8c8 100%)',
-        'sky-rain':   'linear-gradient(180deg, #2c3a4a 0%, #384858 25%, #445868 50%, #506878 75%, #5c7888 100%)',
-        'sky-snow':   'linear-gradient(180deg, #7a8ea4 0%, #8da0b4 25%, #a0b2c4 50%, #b3c4d4 75%, #c6d6e4 100%)'
+        // New York Nacht: tiefes Navy → warmes Purple/Mauve am Horizont
+        'sky-night':        'linear-gradient(180deg, #080c18 0%, #0e1428 18%, #141a3a 35%, #1a1e48 52%, #221e4a 70%, #2a2248 85%, #1e1a38 100%)',
+        // Hongkong Nacht: etwas heller, wärmerer Unterton durch Wolkenpräsenz
+        'sky-night-cloudy': 'linear-gradient(180deg, #0c1020 0%, #121830 18%, #1a2040 35%, #222848 52%, #2a2e50 70%, #282a48 85%, #201e38 100%)',
+        // Sylt: brillantes Blau, heller am Horizont, leicht warm unten
+        'sky-clear':        'linear-gradient(180deg, #1478c2 0%, #2a8ed0 15%, #3e9edc 30%, #56b0e6 48%, #72c0ec 62%, #94d2f2 76%, #b8e2f8 88%, #d0ecfa 100%)',
+        // Slovenska Bistrica: pastelliger, entsättigter, weicher
+        'sky-partly':       'linear-gradient(180deg, #4a98c8 0%, #62a8d2 18%, #78b6dc 35%, #90c4e4 52%, #a8d2ec 68%, #bcdcf0 82%, #cee6f5 100%)',
+        // England: flaches Grau, kaum Sättigung, kühl
+        'sky-cloudy':       'linear-gradient(180deg, #7a8896 0%, #8694a2 16%, #92a0ae 32%, #9eacb8 48%, #a8b6c2 62%, #b2bec8 76%, #bcc6ce 88%, #c4ccd4 100%)',
+        // München Regen: dunkel, kalt, schwer
+        'sky-rain':         'linear-gradient(180deg, #283440 0%, #324250 16%, #3c5060 32%, #465e6e 48%, #506a7a 62%, #5a7484 76%, #647e8e 88%, #6e8898 100%)',
+        // Schnee: kalt, hell, entsättigtes Eisblau
+        'sky-snow':         'linear-gradient(180deg, #6a809a 0%, #7c92aa 18%, #8ea4ba 35%, #a0b4c8 52%, #b0c4d4 68%, #c0d0de 82%, #ccdae6 100%)'
     };
 
     bg.className = 'background-layer ' + skyClass;
     bg.style.background = gradients[skyClass];
 
-    const isDark = skyClass === 'sky-night';
+    const isDark = (skyClass === 'sky-night' || skyClass === 'sky-night-cloudy');
     $.body.classList.toggle('theme-dark', isDark);
     $.body.classList.toggle('theme-light', !isDark);
-    $.body.style.background = gradients[skyClass];
+
+    // Body bekommt NUR eine Solid-Color (Mittelwert des Gradienten) als Overscroll-Fallback.
+    // Kein Gradient auf body — verhindert doppeltes Compositing und Subpixel-Naht.
+    const fallbackColors = {
+        'sky-night':        '#141a3a',
+        'sky-night-cloudy': '#1a2040',
+        'sky-clear':        '#56b0e6',
+        'sky-partly':       '#90c4e4',
+        'sky-cloudy':       '#9eacb8',
+        'sky-rain':         '#465e6e',
+        'sky-snow':         '#a0b4c8'
+    };
+    $.body.style.background = fallbackColors[skyClass] || '#1478c2';
 }
 
 // ----------------------------------------
