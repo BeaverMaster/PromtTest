@@ -73,6 +73,7 @@
         #day-sheet-overlay.sheet-active {
             opacity: 1;
             pointer-events: auto;
+            overscroll-behavior: none;
         }
         /* Sheet Panel Slide-Animation */
         #day-sheet {
@@ -85,6 +86,7 @@
         }
         #day-sheet.sheet-open {
             transform: translateY(0);
+            overscroll-behavior: none;
         }
         /* Drag: Transition deaktivieren während Ziehen */
         #day-sheet.sheet-dragging {
@@ -95,14 +97,6 @@
             pointer-events: none;
             z-index: 60;
         }
-        /*#app {
-              position: absolute;
-              inset: 0;
-              overflow-y: auto;
-              -webkit-overflow-scrolling: touch;
-              overscroll-behavior-y: none;
-          }*/
-
     </style>
 </head>
 <body class="theme-light min-h-screen text-white font-sans">
