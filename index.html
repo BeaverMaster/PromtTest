@@ -261,8 +261,6 @@
 <script>
 'use strict';
 
-let _scrollLockY = 0;
-
 // ========================================
 // HELPER-FUNKTIONEN
 // Reine Berechnungen. Kein State. Kein DOM.
@@ -1537,12 +1535,6 @@ function handleForecastDayClick(e) {
     const idx = parseInt(e.currentTarget.getAttribute('data-day-index'));
     state.selectedDayIndex = idx;
     state.isSheetOpen = true;
-    _scrollLockY = $.app.scrollTop;
-
-    $.app.style.position = 'fixed';
-    $.app.style.top = -_scrollLockY + 'px';
-    $.app.style.left = '0';
-    $.app.style.right = '0';
     updateUI();
     // Zweistufige rAF: Browser rendert Overlay + Sheet bei translateY(100%), dann Animation starten
     requestAnimationFrame(function() {
@@ -1560,13 +1552,6 @@ function handleForecastDayClick(e) {
 // ----------------------------------------
 function handleCloseDaySheet() {
     state.isSheetOpen = false;
-    $.app.style.position = '';
-    $.app.style.top = '';
-    $.app.style.left = '';
-    $.app.style.right = '';
-
-    $.app.scrollTop = _scrollLockY;
-
     $.daySheet.classList.remove('sheet-open');
     // Highlight + Tooltip aufräumen
     handleDayGraphLeave($.dayTempGraph);
