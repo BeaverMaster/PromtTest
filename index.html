@@ -22,10 +22,10 @@
         }
 
 
-        html.theme-light {
+        body.theme-light {
             background: linear-gradient(180deg, #38bdf8 0%, #2563eb 100%);
         }
-        html.theme-dark {
+        body.theme-dark {
             background: linear-gradient(180deg, #0f172a 0%, #1e1b4b 100%);
         }
 
@@ -654,22 +654,17 @@ function updateHourlyForecast() {
 // Architektur-Hinweis: Der Background-Layer (position:fixed) verhindert weißen Rand beim iOS-Overscroll.
 // ----------------------------------------
 function updateTheme() {
-    const root = document.documentElement; // <html>
     const bg = document.getElementById('background-layer');
 
     if (state.isDarkMode) {
-        root.classList.add('theme-dark');
-        root.classList.remove('theme-light');
+        $.body.classList.add('theme-dark');
+        $.body.classList.remove('theme-light');
+        bg.style.background = 'linear-gradient(180deg, #0f172a 0%, #1e1b4b 100%)'; }
 
-        bg.style.background = 'linear-gradient(180deg, #0f172a 0%, #1e1b4b 100%)';
-    } else {
-        root.classList.add('theme-light');
-        root.classList.remove('theme-dark');
-
-        bg.style.background = 'linear-gradient(180deg, #38bdf8 0%, #2563eb 100%)';
-    }
-}
-
+    else {
+        $.body.classList.add('theme-light');
+        $.body.classList.remove('theme-dark');
+        bg.style.background = 'linear-gradient(180deg, #38bdf8 0%, #2563eb 100%)'; } }
 
 // ----------------------------------------
 // Funktion: updateHeader
