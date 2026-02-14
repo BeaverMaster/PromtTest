@@ -73,7 +73,6 @@
         #day-sheet-overlay.sheet-active {
             opacity: 1;
             pointer-events: auto;
-            overscroll-behavior: none;
         }
         /* Sheet Panel Slide-Animation */
         #day-sheet {
@@ -82,11 +81,10 @@
             will-change: transform;
             overscroll-behavior: none;
             -webkit-overflow-scrolling: touch;
-            overflow-y: auto;
+            overflow-y: hidden;
         }
         #day-sheet.sheet-open {
             transform: translateY(0);
-            overscroll-behavior: none;
         }
         /* Drag: Transition deaktivieren während Ziehen */
         #day-sheet.sheet-dragging {
@@ -220,7 +218,7 @@
 
     <!-- Tages-Detail Bottom Sheet -->
     <div id="day-sheet-overlay" class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50">
-        <div id="day-sheet" class="absolute bottom-0 left-0 right-0 bg-slate-800/95 backdrop-blur-lg rounded-t-3xl p-5 pt-3 max-w-md mx-auto shadow-2xl text-white" style="max-height:85vh;overflow-y:auto">
+        <div id="day-sheet" class="absolute bottom-0 left-0 right-0 bg-slate-800/95 backdrop-blur-lg rounded-t-3xl p-5 pt-3 max-w-md mx-auto shadow-2xl text-white" style="max-height:85vh;overflow-y:hidden">
             <!-- Drag-Handle -->
             <div id="day-sheet-handle" class="flex justify-center mb-3 pt-1 cursor-grab active:cursor-grabbing" style="touch-action:none">
                 <div class="w-10 h-1 rounded-full bg-white/30"></div>
