@@ -1,0 +1,1608 @@
+'use strict';
+
+// ========================================
+// HELPER-FUNKTIONEN
+// Reine Berechnungen. Kein State. Kein DOM.
+// ========================================
+
+// ----------------------------------------
+// Funktion: calculateIsDarkMode
+// Verantwortlichkeit: Prüft ob aktuelle Uhrzeit nach Sonnenuntergang oder vor Sonnenaufgang liegt.
+// Verändert: Nichts (pure Funktion)
+// Verändert NICHT: state, DOM
+// Architektur-Hinweis: Ergebnis wird vom Aufrufer in state.isDarkMode geschrieben.
+// ----------------------------------------
+function calculateIsDarkMode(sunriseStr, sunsetStr) {
+    if (!sunriseStr || !sunsetStr) return false;
+    const now = new Date();
+    const sunrise = new Date(sunriseStr);
+    const sunset = new Date(sunsetStr);
+    return now < sunrise || now >= sunset;
+}
+
+// ----------------------------------------
+// Funktion: mapWeatherCode
+// Verantwortlichkeit: Übersetzt WMO Weather Code in Icon (Emoji) und deutsche Beschreibung.
+// Verändert: Nichts (pure Funktion)
+// Verändert NICHT: state, DOM
+// Architektur-Hinweis: Mapping nach WMO-Standard (Code-Tabelle 4677).
+// ----------------------------------------
+function mapWeatherCode(code, isNight) {
+    const map = {
+        0:  { icon: isNight ? '🌙' : '☀️',  desc: 'Klar' },
+        1:  { icon: isNight ? '🌙' : '🌤️', desc: 'Überwiegend klar' },
+        2:  { icon: '⛅',  desc: 'Teilweise bewölkt' },
+        3:  { icon: '☁️',  desc: 'Bewölkt' },
+        45: { icon: '🌫️', desc: 'Nebel' },
+        48: { icon: '🌫️', desc: 'Reifnebel' },
+        51: { icon: '🌦️', desc: 'Leichter Nieselregen' },
+        53: { icon: '🌦️', desc: 'Nieselregen' },
+        55: { icon: '🌧️', desc: 'Starker Nieselregen' },
+        56: { icon: '🌧️', desc: 'Gefrierender Nieselregen' },
+        57: { icon: '🌧️', desc: 'Starker gefr. Nieselregen' },
+        61: { icon: '🌧️', desc: 'Leichter Regen' },
+        63: { icon: '🌧️', desc: 'Regen' },
+        65: { icon: '🌧️', desc: 'Starker Regen' },
+        66: { icon: '🌧️', desc: 'Gefrierender Regen' },
+        67: { icon: '🌧️', desc: 'Starker gefr. Regen' },
+        71: { icon: '🌨️', desc: 'Leichter Schneefall' },
+        73: { icon: '🌨️', desc: 'Schneefall' },
+        75: { icon: '❄️',  desc: 'Starker Schneefall' },
+        77: { icon: '❄️',  desc: 'Schneekörner' },
+        80: { icon: '🌦️', desc: 'Leichte Regenschauer' },
+        81: { icon: '🌧️', desc: 'Regenschauer' },
+        82: { icon: '🌧️', desc: 'Heftige Regenschauer' },
+        85: { icon: '🌨️', desc: 'Leichte Schneeschauer' },
+        86: { icon: '🌨️', desc: 'Starke Schneeschauer' },
+        95: { icon: '⛈️', desc: 'Gewitter' },
+        96: { icon: '⛈️', desc: 'Gewitter mit Hagel' },
+        99: { icon: '⛈️', desc: 'Starkes Gewitter mit Hagel' }
+    };
+    return map[code] || { icon: '❓', desc: 'Unbekannt' };
+}
+
+// Gibt deutschen Wochentag oder "Heute"/"Morgen" zurück.
+function formatDay(dateStr) {
+    const days = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+    const date = new Date(dateStr + 'T00:00:00');
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const compare = new Date(dateStr + 'T00:00:00');
+    compare.setHours(0, 0, 0, 0);
+    if (compare.getTime() === today.getTime()) return 'Heute';
+    if (compare.getTime() === tomorrow.getTime()) return 'Morgen';
+    return days[date.getDay()];
+}
+
+// Extrahiert Uhrzeit (HH:MM) aus ISO-String.
+function formatTime(isoStr) {
+    if (!isoStr) return '—';
+    const d = new Date(isoStr);
+    return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+}
+
+// ----------------------------------------
+// Funktion: mapWeatherCodeToSkyVariant
+// Verantwortlichkeit: Übersetzt WMO Weather Code + isDarkMode in Sky-Asset-Variante.
+// Verändert: Nichts (pure Funktion)
+// Verändert NICHT: state, DOM
+// Architektur-Hinweis: Mapping nach SKY-ASSET-PIPELINE.md Sektion 8.
+// ----------------------------------------
+function mapWeatherCodeToSkyVariant(code, isDark, windSpeed, rainProb) {
+    if (code === null) return isDark ? 'clear-night' : 'clear-day';
+
+    // Niederschlag: Regen/Schnee unabhängig von Tag/Nacht
+    if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82) || code >= 95) {
+        return 'rain';
+    }
+    if ((code >= 71 && code <= 77) || (code >= 85 && code <= 86)) {
+        return 'snow';
+    }
+
+    // Nacht-Varianten
+    if (isDark) {
+        if (code <= 1) return 'clear-night';
+        return 'cloudy-night';
+    }
+
+    // Tag-Varianten
+    if (code <= 1) return 'clear-day';
+    if (code === 2) {
+        // Aktive Wetterlage → heavy Cumulus (Telgte), sonst leichte Schleierwolken (Slovenska Bistrica)
+        if (windSpeed > 15 || rainProb > 40) return 'partly-day-heavy';
+        return 'partly-day';
+    }
+    if (code === 3 || code === 45 || code === 48) return 'cloudy-day';
+
+    return isDark ? 'cloudy-night' : 'cloudy-day';
+}
+
+
+// ========================================
+// STATE
+// Zentrales, direkt mutierbares Zustandsobjekt.
+// Jede Mutation MUSS unmittelbar updateUI() auslösen.
+// ========================================
+
+const state = {
+    latitude: null,
+    longitude: null,
+    cityName: '',
+    currentTemp: null,
+    currentWeatherCode: null,
+    humidity: null,
+    windSpeed: null,
+    apparentTemp: null,
+    sunrise: '',
+    sunset: '',
+    rainProbabilityToday: null,
+    forecast: [],
+    isDarkMode: false,
+    isLoading: false,
+    error: null,
+    showCityInput: false,
+    cityInputValue: '',
+    hourly: [],
+    rawHourly: null,
+    selectedDayIndex: null,
+    isSheetOpen: false,
+    sheetDragOffset: 0
+};
+
+
+// ========================================
+// DOM-CACHE
+// Einmaliges Caching aller benötigten Elemente.
+// Kein verstreutes getElementById im restlichen Code.
+// ========================================
+
+let $ = {};
+
+// ----------------------------------------
+// Funktion: cacheDom
+// Verantwortlichkeit: Cached alle DOM-Referenzen in das $-Objekt.
+// Verändert: $ (DOM-Cache-Objekt)
+// Verändert NICHT: state
+// Architektur-Hinweis: Wird genau einmal zu Beginn des Lifecycle aufgerufen.
+// ----------------------------------------
+function cacheDom() {
+    $ = {
+        body:            document.body,
+        cityName:        document.getElementById('city-name'),
+        cityToggleBtn:   document.getElementById('city-toggle-btn'),
+        refreshBtn:      document.getElementById('refresh-btn'),
+        weatherIcon:     document.getElementById('weather-icon'),
+        currentTemp:     document.getElementById('current-temp'),
+        weatherDesc:     document.getElementById('weather-desc'),
+        apparentTemp:    document.getElementById('apparent-temp'),
+        windSpeed:       document.getElementById('wind-speed'),
+        humidity:        document.getElementById('humidity'),
+        rainProbability: document.getElementById('rain-probability'),
+        sunrise:         document.getElementById('sunrise'),
+        sunset:          document.getElementById('sunset'),
+        forecastList:    document.getElementById('forecast-list'),
+        cityOverlay:     document.getElementById('city-overlay'),
+        cityInput:       document.getElementById('city-input'),
+        citySubmitBtn:   document.getElementById('city-submit-btn'),
+        cityCancelBtn:   document.getElementById('city-cancel-btn'),
+        loadingOverlay:  document.getElementById('loading-overlay'),
+        errorDisplay:    document.getElementById('error-display'),
+        tempGraph:       document.getElementById('temp-graph'),
+        tempGraphSection:document.getElementById('temp-graph-section'),
+        graphTooltip:    document.getElementById('graph-tooltip'),
+        hourlyScroll:    document.getElementById('hourly-scroll'),
+        daySheetOverlay: document.getElementById('day-sheet-overlay'),
+        daySheet:        document.getElementById('day-sheet'),
+        daySheetTitle:   document.getElementById('day-sheet-title'),
+        dayTempGraph:    document.getElementById('day-temp-graph'),
+        dayRainGraph:    document.getElementById('day-rain-graph'),
+        daySheetHandle:  document.getElementById('day-sheet-handle'),
+        dayGraphTooltip: document.getElementById('day-graph-tooltip'),
+        skyBg:           document.getElementById('sky-bg'),
+        app: document.getElementById('app')
+    };
+}
+
+
+// ========================================
+// STATE-MUTATIONS-FUNKTIONEN
+// Verändern ausschließlich state.
+// Rufen danach immer updateUI() auf.
+// Kein DOM-Zugriff.
+// ========================================
+
+// ----------------------------------------
+// Funktion: setLocation
+// Verantwortlichkeit: Schreibt Standortdaten in state.
+// Verändert: state.latitude, state.longitude, state.cityName
+// Verändert NICHT: DOM
+// Architektur-Hinweis: Wird nach GPS-Erkennung oder Stadtsuche aufgerufen.
+// ----------------------------------------
+function setLocation(lat, lon, name) {
+    state.latitude = lat;
+    state.longitude = lon;
+    state.cityName = name;
+    updateUI();
+}
+
+// ----------------------------------------
+// Funktion: setWeatherData
+// Verantwortlichkeit: Parst die API-Antwort und schreibt alle Wetterdaten in state.
+// Verändert: state (alle Wetterfelder, forecast-Array, isDarkMode)
+// Verändert NICHT: DOM
+// Architektur-Hinweis: Berechnet isDarkMode via Helper-Funktion.
+// ----------------------------------------
+function setWeatherData(data) {
+    const current = data.current;
+    const daily = data.daily;
+
+    state.currentTemp = Math.round(current.temperature_2m);
+    state.currentWeatherCode = current.weather_code;
+    state.humidity = current.relative_humidity_2m;
+    state.windSpeed = Math.round(current.wind_speed_10m);
+    state.apparentTemp = Math.round(current.apparent_temperature);
+    state.sunrise = daily.sunrise[0];
+    state.sunset = daily.sunset[0];
+    state.rainProbabilityToday = daily.precipitation_probability_max[0];
+    state.isDarkMode = calculateIsDarkMode(state.sunrise, state.sunset);
+
+    state.forecast = [];
+    for (let i = 0; i < daily.time.length; i++) {
+        state.forecast.push({
+            date: daily.time[i],
+            tempMax: Math.round(daily.temperature_2m_max[i]),
+            tempMin: Math.round(daily.temperature_2m_min[i]),
+            weatherCode: daily.weather_code[i],
+            rainProbability: daily.precipitation_probability_max[i],
+            windSpeed: Math.round(daily.wind_speed_10m_max[i])
+        });
+    }
+
+    state.isLoading = false;
+    state.error = null;
+    state.hourly = buildHourlyForecast(data.hourly);
+    state.rawHourly = data.hourly;
+    updateUI();
+
+    // Alle Sky-Assets im Hintergrund vorladen nach erstem erfolgreichen Fetch
+    preloadAllSkyAssets();
+}
+
+// ----------------------------------------
+// Funktion: setError
+// Verantwortlichkeit: Setzt eine Fehlermeldung in state und plant deren Ausblendung.
+// Verändert: state.error, state.isLoading
+// Verändert NICHT: DOM
+// Architektur-Hinweis: Fehler werden ausschließlich über state.error transportiert.
+// ----------------------------------------
+function setError(msg) {
+    state.error = msg;
+    state.isLoading = false;
+    updateUI();
+    setTimeout(clearError, 5000);
+}
+
+// ----------------------------------------
+// Funktion: clearError
+// Verantwortlichkeit: Entfernt die Fehlermeldung aus state.
+// Verändert: state.error
+// Verändert NICHT: DOM
+// ----------------------------------------
+function clearError() {
+    state.error = null;
+    updateUI();
+}
+
+// ----------------------------------------
+// Funktion: setLoading
+// Verantwortlichkeit: Setzt den Ladezustand.
+// Verändert: state.isLoading
+// Verändert NICHT: DOM
+// ----------------------------------------
+function setLoading(val) {
+    state.isLoading = val;
+    updateUI();
+}
+
+
+// ========================================
+// UPDATE-FUNKTIONEN
+// Lesen ausschließlich state, schreiben ausschließlich DOM.
+// Keine State-Mutation. Keine Berechnungen.
+// Jede Funktion hat exakt eine Verantwortlichkeit.
+// ========================================
+
+// ----------------------------------------
+// Funktion: updateUI
+// Verantwortlichkeit: Zentrale Update-Funktion – ruft ALLE Teil-Updates auf.
+// Verändert: DOM (via Teil-Update-Funktionen)
+// Verändert NICHT: state
+// Architektur-Hinweis: Einziger Einstiegspunkt für alle DOM-Aktualisierungen.
+// ----------------------------------------
+function updateUI() {
+    updateTheme();
+    updateHeader();
+    updateCurrentWeather();
+    updateDetails();
+    updateSunTimes();
+    updateHourlyForecast();
+    updateForecastList();
+    updateTemperatureGraph();
+    updateLoadingState();
+    updateErrorDisplay();
+    updateCityOverlay();
+    updateDayDetailSheet();
+}
+
+function buildHourlyForecast(hourlyData) {
+    const now = new Date();
+    const result = [];
+
+    let startIndex = -1;
+
+    for (let i = 0; i < hourlyData.time.length; i++) {
+        const t = new Date(hourlyData.time[i]);
+        if (t > now) {
+            startIndex = i;
+            break;
+        }
+    }
+
+    if (startIndex === -1) return [];
+
+    const slice = hourlyData.time.slice(startIndex, startIndex + 24);
+
+    for (let i = 0; i < slice.length; i++) {
+        result.push({
+            timeISO: hourlyData.time[startIndex + i],
+            temperature: Math.round(hourlyData.temperature_2m[startIndex + i]),
+            weatherCode: hourlyData.weather_code[startIndex + i],
+            isNow: i === 0
+        });
+    }
+
+    return result;
+}
+
+function updateHourlyForecast() {
+    if (!state.hourly || state.hourly.length === 0) {
+        $.hourlyScroll.replaceChildren();
+        return;
+    }
+
+    const items = [];
+
+    for (let i = 0; i < state.hourly.length; i++) {
+        const hour = state.hourly[i];
+
+        const container = document.createElement('div');
+        container.classList.add(
+            'flex',
+            'flex-col',
+            'items-center',
+            'min-w-[56px]',
+            'text-center'
+        );
+
+        // Zeitlabel
+        const timeLabel = document.createElement('span');
+        timeLabel.classList.add('text-xs', 'opacity-60', 'mb-1');
+
+        if (hour.isNow) {
+            timeLabel.textContent = 'Jetzt';
+        } else {
+            const d = new Date(hour.timeISO);
+            timeLabel.textContent = d.toLocaleTimeString('de-DE', {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        // Icon
+        const weather = mapWeatherCode(hour.weatherCode, false);
+
+        const icon = document.createElement('span');
+        icon.classList.add('text-2xl', 'mb-1');
+        icon.textContent = weather.icon;
+
+        // Temperatur
+        const temp = document.createElement('span');
+        temp.classList.add('text-sm', 'font-medium');
+        temp.textContent = hour.temperature + '°';
+
+        container.appendChild(timeLabel);
+        container.appendChild(icon);
+        container.appendChild(temp);
+
+        items.push(container);
+    }
+
+    $.hourlyScroll.replaceChildren(...items);
+}
+
+
+
+// ----------------------------------------
+// Funktion: updateTheme
+// Verantwortlichkeit: Schaltet Dark/Light-Klassen auf dem body-Element und aktualisiert den Background-Layer.
+// Verändert: DOM (body classList, background-layer style)
+// Verändert NICHT: state
+// Architektur-Hinweis: Der Background-Layer (position:fixed) verhindert weißen Rand beim iOS-Overscroll.
+// ----------------------------------------
+function updateTheme() {
+    const bg = document.getElementById('background-layer');
+
+    const isNight = state.isDarkMode;
+    const weatherCode = state.currentWeatherCode;
+    // musst du ggf. anpassen je nachdem wie du das speicherst
+
+    let image = 'clear-day';
+
+    if (isNight) {
+        image = 'clear-night';
+    } else {
+        // simple Regel:
+        // Alles was stark bewölkt ist → cloudy
+        if (weatherCode >= 3) {
+            image = 'cloudy-day';
+        }
+    }
+
+    bg.style.backgroundImage = `url(assets/sky/${image}.webp)`;
+}
+
+
+// ========================================
+// SKY-ASSET-SYSTEM
+// Lädt WebP-Hintergrundbilder passend zum aktuellen Wetter.
+// CSS-Gradient bleibt als Fallback unter dem Bild sichtbar.
+// ========================================
+
+// ----------------------------------------
+// Funktion: updateSkyAsset
+// Verantwortlichkeit: Ermittelt die passende Sky-Variante und lädt das WebP-Bild.
+// Verändert: DOM (sky-bg background-image, sky-bg-loaded Klasse)
+// Verändert NICHT: state
+// Architektur-Hinweis: Nutzt _currentSkyVariant um unnötige Re-Loads zu vermeiden.
+// ----------------------------------------
+let _currentSkyVariant = '';
+
+function updateSkyAsset() {
+    const windSpeed = state.windSpeed || 0;
+    const rainProb = state.rainProbabilityToday || 0;
+    const variant = mapWeatherCodeToSkyVariant(state.currentWeatherCode, state.isDarkMode, windSpeed, rainProb);
+
+    if (variant === _currentSkyVariant) return;
+    _currentSkyVariant = variant;
+
+    loadSkyAsset(variant);
+}
+
+// ----------------------------------------
+// Funktion: loadSkyAsset
+// Verantwortlichkeit: Lädt ein Sky-WebP-Bild und setzt es als Hintergrund mit Fade-In.
+// Verändert: DOM (sky-bg Element)
+// Verändert NICHT: state
+// Architektur-Hinweis: Bild wird per Image() vorgeladen, erst nach Load ins DOM gesetzt.
+// ----------------------------------------
+function loadSkyAsset(variant) {
+    const img = new Image();
+    img.onload = function handleSkyAssetLoaded() {
+        $.skyBg.style.backgroundImage = 'url(' + url + ')';
+        $.skyBg.classList.add('sky-bg-loaded');
+    };
+    img.onerror = function handleSkyAssetError() {
+        // Fallback: CSS-Gradient bleibt sichtbar, kein Bild
+        $.skyBg.classList.remove('sky-bg-loaded');
+        $.skyBg.style.backgroundImage = '';
+    };
+    // Fade-Out vor dem Wechsel wenn bereits ein Bild geladen war
+    if ($.skyBg.classList.contains('sky-bg-loaded')) {
+        $.skyBg.classList.remove('sky-bg-loaded');
+    }
+    img.src = url;
+}
+
+// ----------------------------------------
+// Funktion: preloadAllSkyAssets
+// Verantwortlichkeit: Lädt alle Sky-Varianten im Hintergrund in den Browser-Cache.
+// Verändert: Nichts (Browser-Cache)
+// Verändert NICHT: state, DOM
+// Architektur-Hinweis: Wird nach dem ersten erfolgreichen Wetter-Fetch aufgerufen.
+// ----------------------------------------
+function preloadAllSkyAssets() {
+    var variants = ['clear-day', 'partly-day', 'partly-day-heavy', 'cloudy-day', 'rain', 'snow', 'clear-night', 'cloudy-night'];
+    for (var i = 0; i < variants.length; i++) {
+        if (variants[i] !== _currentSkyVariant) {
+            var img = new Image();
+        }
+    }
+}
+
+
+// ----------------------------------------
+// Funktion: updateHeader
+// Verantwortlichkeit: Zeigt den aktuellen Stadtnamen an.
+// Verändert: DOM (city-name textContent)
+// Verändert NICHT: state
+// ----------------------------------------
+function updateHeader() {
+    $.cityName.textContent = state.cityName || 'Standort wird ermittelt…';
+}
+
+// ----------------------------------------
+// Funktion: updateCurrentWeather
+// Verantwortlichkeit: Zeigt aktuelle Temperatur, Icon und Beschreibung an.
+// Verändert: DOM (weather-icon, current-temp, weather-desc, apparent-temp)
+// Verändert NICHT: state
+// ----------------------------------------
+function updateCurrentWeather() {
+    if (state.currentTemp === null) return;
+    const weather = mapWeatherCode(state.currentWeatherCode, state.isDarkMode);
+    $.weatherIcon.textContent = weather.icon;
+    $.currentTemp.textContent = state.currentTemp + '°';
+    $.weatherDesc.textContent = weather.desc;
+    $.apparentTemp.textContent = 'Gefühlt ' + state.apparentTemp + '°';
+}
+
+// ----------------------------------------
+// Funktion: updateDetails
+// Verantwortlichkeit: Zeigt Wind, Luftfeuchtigkeit und Regenwahrscheinlichkeit.
+// Verändert: DOM (wind-speed, humidity, rain-probability)
+// Verändert NICHT: state
+// ----------------------------------------
+function updateDetails() {
+    if (state.windSpeed === null) return;
+    $.windSpeed.textContent = state.windSpeed + ' km/h';
+    $.humidity.textContent = state.humidity + '%';
+    $.rainProbability.textContent = state.rainProbabilityToday !== null
+        ? state.rainProbabilityToday + '%'
+        : '—';
+}
+
+// ----------------------------------------
+// Funktion: updateSunTimes
+// Verantwortlichkeit: Zeigt Sonnenaufgangs- und Sonnenuntergangszeit an.
+// Verändert: DOM (sunrise, sunset)
+// Verändert NICHT: state
+// ----------------------------------------
+function updateSunTimes() {
+    $.sunrise.textContent = formatTime(state.sunrise);
+    $.sunset.textContent = formatTime(state.sunset);
+}
+
+// ----------------------------------------
+// Funktion: updateForecastList
+// Verantwortlichkeit: Erzeugt die 10-Tage-Vorhersage-Zeilen per createElement + replaceChildren.
+// Verändert: DOM (forecast-list Kindelemente)
+// Verändert NICHT: state
+// Architektur-Hinweis: Kein innerHTML. Kein Template-String-Rendering. Ausschließlich createElement.
+// ----------------------------------------
+function updateForecastList() {
+    if (state.forecast.length === 0) return;
+
+    const items = [];
+
+    for (let i = 0; i < state.forecast.length; i++) {
+        const day = state.forecast[i];
+        const weather = mapWeatherCode(day.weatherCode, false);
+
+        const row = document.createElement('div');
+        row.classList.add('flex', 'items-center', 'justify-between', 'py-3', 'cursor-pointer', 'active:bg-white/5', 'rounded-lg', '-mx-1', 'px-1');
+        row.setAttribute('data-day-index', i.toString());
+        row.addEventListener('click', handleForecastDayClick);
+
+        const dayLabel = document.createElement('span');
+        dayLabel.classList.add('w-16', 'text-sm', 'font-medium');
+        dayLabel.textContent = formatDay(day.date);
+
+        const icon = document.createElement('span');
+        icon.classList.add('text-2xl', 'w-10', 'text-center');
+        icon.textContent = weather.icon;
+
+        const rain = document.createElement('span');
+        rain.classList.add('text-xs', 'text-blue-200', 'w-12', 'text-center');
+        rain.textContent = day.rainProbability + '%';
+
+        const temps = document.createElement('span');
+        temps.classList.add('text-sm', 'text-right', 'w-24');
+
+        const tempMin = document.createElement('span');
+        tempMin.classList.add('opacity-50');
+        tempMin.textContent = day.tempMin + '°';
+
+        const spacer = document.createElement('span');
+        spacer.textContent = '  ';
+
+        const tempMax = document.createElement('span');
+        tempMax.classList.add('font-semibold');
+        tempMax.textContent = day.tempMax + '°';
+
+        temps.appendChild(tempMin);
+        temps.appendChild(spacer);
+        temps.appendChild(tempMax);
+
+        row.appendChild(dayLabel);
+        row.appendChild(icon);
+        row.appendChild(rain);
+        row.appendChild(temps);
+
+        items.push(row);
+    }
+
+    $.forecastList.replaceChildren.apply($.forecastList, items);
+}
+
+// ----------------------------------------
+// Funktion: updateTemperatureGraph
+// Verantwortlichkeit: Zeichnet den SVG-Temperatur-Graphen mit Linien, Punkten und Hover-Bereichen.
+// Verändert: DOM (temp-graph SVG Kindelemente)
+// Verändert NICHT: state
+// ----------------------------------------
+let _prevForecastKey = '';
+
+function updateTemperatureGraph() {
+    if (state.forecast.length === 0) return;
+
+    // Nur neu zeichnen wenn sich die Daten geändert haben
+    const key = state.forecast.map(function(d) { return d.tempMax + ',' + d.tempMin; }).join('|');
+    if (key === _prevForecastKey) return;
+    _prevForecastKey = key;
+
+    const svg = $.tempGraph;
+    const W = 320, H = 160;
+    const padL = 8, padR = 8, padT = 25, padB = 30;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+    const days = state.forecast;
+    const n = days.length;
+
+    // Temperatur-Range bestimmen
+    const allTemps = [];
+    for (let i = 0; i < n; i++) {
+        allTemps.push(days[i].tempMax);
+        allTemps.push(days[i].tempMin);
+    }
+    const tMin = Math.min.apply(null, allTemps) - 2;
+    const tMax = Math.max.apply(null, allTemps) + 2;
+    const tRange = tMax - tMin || 1;
+
+    function x(idx) { return padL + (plotW / (n - 1)) * idx; }
+    function y(temp) { return padT + plotH - ((temp - tMin) / tRange) * plotH; }
+
+    const NS = 'http://www.w3.org/2000/svg';
+
+    function el(tag, attrs) {
+        const node = document.createElementNS(NS, tag);
+        for (const k in attrs) {
+            if (attrs.hasOwnProperty(k)) node.setAttribute(k, attrs[k]);
+        }
+        return node;
+    }
+
+    const frag = document.createDocumentFragment();
+
+    // Horizontale Hilfslinien
+    const lineCount = 4;
+    for (let li = 0; li <= lineCount; li++) {
+        const yy = padT + (plotH / lineCount) * li;
+        const gridLine = el('line', {
+            x1: padL, y1: yy, x2: W - padR, y2: yy,
+            stroke: 'rgba(255,255,255,0.08)', 'stroke-width': '0.5'
+        });
+        frag.appendChild(gridLine);
+    }
+
+    // Pfad-Strings bauen
+    let maxPath = '', minPath = '';
+    for (let i = 0; i < n; i++) {
+        const px = x(i).toFixed(1);
+        const pyMax = y(days[i].tempMax).toFixed(1);
+        const pyMin = y(days[i].tempMin).toFixed(1);
+        maxPath += (i === 0 ? 'M' : 'L') + px + ',' + pyMax;
+        minPath += (i === 0 ? 'M' : 'L') + px + ',' + pyMin;
+    }
+
+    // Gefüllte Fläche zwischen Max und Min
+    let areaPath = maxPath;
+    for (let i = n - 1; i >= 0; i--) {
+        areaPath += 'L' + x(i).toFixed(1) + ',' + y(days[i].tempMin).toFixed(1);
+    }
+    areaPath += 'Z';
+
+    const gradient = el('defs', {});
+    const grad = el('linearGradient', { id: 'areaGrad', x1: '0', y1: '0', x2: '0', y2: '1' });
+    const stop1 = el('stop', { offset: '0%', 'stop-color': 'rgba(255,255,255,0.15)' });
+    const stop2 = el('stop', { offset: '100%', 'stop-color': 'rgba(255,255,255,0.02)' });
+    grad.appendChild(stop1);
+    grad.appendChild(stop2);
+    gradient.appendChild(grad);
+    frag.appendChild(gradient);
+
+    const area = el('path', {
+        d: areaPath,
+        fill: 'url(#areaGrad)'
+    });
+    frag.appendChild(area);
+
+    // Min-Linie
+    const minLine = el('path', {
+        d: minPath,
+        fill: 'none',
+        stroke: 'rgba(147,197,253,0.5)',
+        'stroke-width': '1.5',
+        'stroke-linecap': 'round',
+        'stroke-linejoin': 'round',
+        class: 'graph-line'
+    });
+    frag.appendChild(minLine);
+
+    // Max-Linie
+    const maxLine = el('path', {
+        d: maxPath,
+        fill: 'none',
+        stroke: 'rgba(255,255,255,0.9)',
+        'stroke-width': '2',
+        'stroke-linecap': 'round',
+        'stroke-linejoin': 'round',
+        class: 'graph-line'
+    });
+    frag.appendChild(maxLine);
+
+    // Punkte und Labels
+    for (let i = 0; i < n; i++) {
+        const cx = x(i);
+        const delay = (i * 0.08 + 0.4) + 's';
+
+        // Max-Punkt
+        const dotMax = el('circle', {
+            cx: cx.toFixed(1), cy: y(days[i].tempMax).toFixed(1), r: '3',
+            fill: 'white', class: 'graph-dot', style: 'animation-delay:' + delay
+        });
+        frag.appendChild(dotMax);
+
+        // Min-Punkt
+        const dotMin = el('circle', {
+            cx: cx.toFixed(1), cy: y(days[i].tempMin).toFixed(1), r: '2.5',
+            fill: 'rgba(147,197,253,0.7)', class: 'graph-dot', style: 'animation-delay:' + delay
+        });
+        frag.appendChild(dotMin);
+
+        // Tag-Label unten
+        const label = el('text', {
+            x: cx.toFixed(1), y: (H - 8).toString(),
+            'text-anchor': 'middle', fill: 'rgba(255,255,255,0.5)',
+            'font-size': '9', 'font-family': 'inherit'
+        });
+        label.textContent = formatDay(days[i].date);
+        frag.appendChild(label);
+
+        // Unsichtbarer Hover-Bereich
+        const hitArea = el('rect', {
+            x: (cx - plotW / n / 2).toFixed(1), y: padT.toString(),
+            width: (plotW / n).toFixed(1), height: plotH.toString(),
+            fill: 'transparent', 'data-index': i.toString(),
+            style: 'cursor:pointer'
+        });
+        hitArea.addEventListener('mouseenter', handleGraphHover);
+        hitArea.addEventListener('mousemove', handleGraphMove);
+        hitArea.addEventListener('mouseleave', handleGraphLeave);
+        hitArea.addEventListener('touchstart', handleGraphTouch, { passive: true });
+        frag.appendChild(hitArea);
+    }
+
+    svg.replaceChildren(frag);
+}
+
+// ----------------------------------------
+// Graph-Tooltip Handler
+// ----------------------------------------
+function handleGraphHover(e) {
+    const idx = parseInt(e.target.getAttribute('data-index'));
+    const day = state.forecast[idx];
+    if (!day) return;
+    const weather = mapWeatherCode(day.weatherCode, false);
+    $.graphTooltip.innerHTML =
+        '<div class="font-semibold mb-1">' + formatDay(day.date) + '</div>' +
+        '<div>' + weather.icon + ' ' + day.tempMax + '° / ' + day.tempMin + '°</div>' +
+        '<div class="opacity-60 mt-0.5">Wind ' + day.windSpeed + ' km/h · Regen ' + day.rainProbability + '%</div>';
+    $.graphTooltip.classList.remove('hidden');
+}
+
+function handleGraphMove(e) {
+    const section = $.tempGraphSection;
+    const rect = section.getBoundingClientRect();
+    const xPos = e.clientX - rect.left;
+    const yPos = e.clientY - rect.top;
+    const ttW = $.graphTooltip.offsetWidth;
+    let left = xPos - ttW / 2;
+    if (left < 8) left = 8;
+    if (left + ttW > rect.width - 8) left = rect.width - ttW - 8;
+    $.graphTooltip.style.left = left + 'px';
+    $.graphTooltip.style.top = (yPos - $.graphTooltip.offsetHeight - 10) + 'px';
+}
+
+function handleGraphLeave() {
+    $.graphTooltip.classList.add('hidden');
+}
+
+function handleGraphTouch(e) {
+    const touch = e.touches[0];
+    const idx = parseInt(e.target.getAttribute('data-index'));
+    const day = state.forecast[idx];
+    if (!day) return;
+    const weather = mapWeatherCode(day.weatherCode, false);
+    $.graphTooltip.innerHTML =
+        '<div class="font-semibold mb-1">' + formatDay(day.date) + '</div>' +
+        '<div>' + weather.icon + ' ' + day.tempMax + '° / ' + day.tempMin + '°</div>' +
+        '<div class="opacity-60 mt-0.5">Wind ' + day.windSpeed + ' km/h · Regen ' + day.rainProbability + '%</div>';
+    $.graphTooltip.classList.remove('hidden');
+
+    const section = $.tempGraphSection;
+    const rect = section.getBoundingClientRect();
+    const xPos = touch.clientX - rect.left;
+    const ttW = $.graphTooltip.offsetWidth;
+    let left = xPos - ttW / 2;
+    if (left < 8) left = 8;
+    if (left + ttW > rect.width - 8) left = rect.width - ttW - 8;
+    $.graphTooltip.style.left = left + 'px';
+    $.graphTooltip.style.top = '8px';
+
+    clearTimeout(handleGraphTouch._timer);
+    handleGraphTouch._timer = setTimeout(handleGraphLeave, 2000);
+}
+
+// ----------------------------------------
+// Funktion: updateLoadingState
+// Verantwortlichkeit: Zeigt oder verbirgt das Lade-Overlay.
+// Verändert: DOM (loading-overlay classList)
+// Verändert NICHT: state
+// ----------------------------------------
+function updateLoadingState() {
+    if (state.isLoading) {
+        $.loadingOverlay.classList.remove('hidden');
+    } else {
+        $.loadingOverlay.classList.add('hidden');
+    }
+}
+
+// ----------------------------------------
+// Funktion: updateErrorDisplay
+// Verantwortlichkeit: Zeigt oder verbirgt die Fehlermeldung.
+// Verändert: DOM (error-display classList, textContent)
+// Verändert NICHT: state
+// ----------------------------------------
+function updateErrorDisplay() {
+    if (state.error) {
+        $.errorDisplay.textContent = state.error;
+        $.errorDisplay.classList.remove('hidden');
+    } else {
+        $.errorDisplay.classList.add('hidden');
+    }
+}
+
+// ----------------------------------------
+// Funktion: updateCityOverlay
+// Verantwortlichkeit: Zeigt oder verbirgt das Stadteingabe-Overlay. Fokussiert Input beim Öffnen.
+// Verändert: DOM (city-overlay classList, city-input focus/value)
+// Verändert NICHT: state
+// Architektur-Hinweis: Prüft classList, um Fokus nur beim erstmaligen Öffnen zu setzen.
+// ----------------------------------------
+function updateCityOverlay() {
+    if (state.showCityInput) {
+        const wasHidden = $.cityOverlay.classList.contains('hidden');
+        $.cityOverlay.classList.remove('hidden');
+        if (wasHidden) {
+            $.cityInput.value = '';
+            $.cityInput.focus();
+        }
+    } else {
+        $.cityOverlay.classList.add('hidden');
+    }
+}
+
+
+// ========================================
+// TAGES-DETAIL BOTTOM SHEET
+// Zeigt stündliche Temperatur- und Regengraphen für einen ausgewählten Tag.
+// ========================================
+
+// ----------------------------------------
+// Funktion: buildDayHourlyData
+// Verantwortlichkeit: Filtert state.rawHourly auf exakt einen Kalendertag (00:00–23:00).
+// Verändert: Nichts (pure Funktion)
+// Verändert NICHT: state, DOM
+// ----------------------------------------
+function buildDayHourlyData(dateString) {
+    if (!state.rawHourly || !state.rawHourly.time) return [];
+    const result = [];
+    for (let i = 0; i < state.rawHourly.time.length; i++) {
+        // rawHourly.time enthält ISO-Strings wie "2025-05-10T14:00"
+        if (state.rawHourly.time[i].substring(0, 10) === dateString) {
+            result.push({
+                timeISO: state.rawHourly.time[i],
+                temperature: Math.round(state.rawHourly.temperature_2m[i]),
+                rainProbability: state.rawHourly.precipitation_probability
+                    ? state.rawHourly.precipitation_probability[i]
+                    : 0
+            });
+        }
+    }
+    return result;
+}
+
+// ----------------------------------------
+// Funktion: updateDayDetailSheet
+// Verantwortlichkeit: Rendert Inhalt des Tages-Detail-Sheets. Steuert Overlay + Body-Lock.
+// Verändert: DOM (day-sheet-overlay, day-sheet-title, SVGs, body classList)
+// Verändert NICHT: state
+// Architektur-Hinweis: Animation (sheet-open Klasse) wird von open/close-Handlern gesteuert.
+// ----------------------------------------
+let _currentDayData = [];
+let _dayTempLayout = null;
+let _dayRainLayout = null;
+
+function updateDayDetailSheet() {
+    // Geschlossen und nicht animierend → Overlay deaktivieren, Scroll freigeben
+    if (state.selectedDayIndex === null) {
+        if (!state.isSheetOpen) {
+            $.daySheetOverlay.classList.remove('sheet-active');
+        }
+        return;
+    }
+    const day = state.forecast[state.selectedDayIndex];
+    if (!day) return;
+
+    // Titel setzen: z.B. "Heute, 12. Mai"
+    const dayLabel = formatDay(day.date);
+    const dateObj = new Date(day.date + 'T00:00:00');
+    const months = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+    $.daySheetTitle.textContent = dayLabel + ', ' + dateObj.getDate() + '. ' + months[dateObj.getMonth()];
+
+    // Stundendaten aufbauen und Graphen rendern
+    _currentDayData = buildDayHourlyData(day.date);
+    updateDayTemperatureGraph(_currentDayData);
+    updateDayRainGraph(_currentDayData);
+
+    // Overlay anzeigen + Body sperren (Sheet-Panel startet bei translateY(100%))
+    $.daySheetOverlay.classList.add('sheet-active');
+}
+
+// ----------------------------------------
+// SVG-Hilfsfunktion: Erstellt ein SVG-Element mit Attributen.
+// ----------------------------------------
+const _svgNS = 'http://www.w3.org/2000/svg';
+function _svgEl(tag, attrs) {
+    const node = document.createElementNS(_svgNS, tag);
+    for (const k in attrs) {
+        if (attrs.hasOwnProperty(k)) node.setAttribute(k, attrs[k]);
+    }
+    return node;
+}
+
+// ----------------------------------------
+// Funktion: updateDayTemperatureGraph
+// Verantwortlichkeit: Zeichnet den stündlichen Temperatur-Graphen (Linie + Punkte) in das Day-Sheet.
+// Verändert: DOM (day-temp-graph SVG Kindelemente)
+// Verändert NICHT: state
+// ----------------------------------------
+function updateDayTemperatureGraph(dayData) {
+    const svg = $.dayTempGraph;
+    if (dayData.length === 0) { svg.replaceChildren(); return; }
+
+    const W = 320, H = 160;
+    const padL = 30, padR = 10, padT = 20, padB = 25;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+    const n = dayData.length;
+
+    // Dynamische Y-Skalierung
+    const temps = dayData.map(function(d) { return d.temperature; });
+    const tMin = Math.min.apply(null, temps) - 2;
+    const tMax = Math.max.apply(null, temps) + 2;
+    const tRange = tMax - tMin || 1;
+
+    function xPos(i) { return padL + (plotW / (n - 1)) * i; }
+    function yPos(t) { return padT + plotH - ((t - tMin) / tRange) * plotH; }
+
+    const frag = document.createDocumentFragment();
+
+    // Horizontale Grid-Lines mit Temperaturwerten
+    const gridSteps = 4;
+    for (let g = 0; g <= gridSteps; g++) {
+        const yy = padT + (plotH / gridSteps) * g;
+        const tempVal = Math.round(tMax - (g / gridSteps) * (tMax - tMin));
+        frag.appendChild(_svgEl('line', {
+            x1: padL, y1: yy.toFixed(1), x2: W - padR, y2: yy.toFixed(1),
+            stroke: 'rgba(255,255,255,0.08)', 'stroke-width': '0.5'
+        }));
+        const label = _svgEl('text', {
+            x: (padL - 4).toString(), y: (yy + 3).toFixed(1),
+            'text-anchor': 'end', fill: 'rgba(255,255,255,0.4)',
+            'font-size': '8', 'font-family': 'inherit'
+        });
+        label.textContent = tempVal + '°';
+        frag.appendChild(label);
+    }
+
+    // Pfad bauen
+    let path = '';
+    for (let i = 0; i < n; i++) {
+        path += (i === 0 ? 'M' : 'L') + xPos(i).toFixed(1) + ',' + yPos(dayData[i].temperature).toFixed(1);
+    }
+
+    // Linie
+    frag.appendChild(_svgEl('path', {
+        d: path, fill: 'none', stroke: 'rgba(255,255,255,0.9)',
+        'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+        class: 'graph-line'
+    }));
+
+    // Punkte
+    for (let i = 0; i < n; i++) {
+        const delay = (i * 0.03 + 0.3) + 's';
+        frag.appendChild(_svgEl('circle', {
+            cx: xPos(i).toFixed(1), cy: yPos(dayData[i].temperature).toFixed(1), r: '2.5',
+            fill: 'white', class: 'graph-dot', style: 'animation-delay:' + delay
+        }));
+    }
+
+    // X-Achsen-Labels: 00, 06, 12, 18
+    const xLabels = [0, 6, 12, 18];
+    for (let li = 0; li < xLabels.length; li++) {
+        const h = xLabels[li];
+        if (h < n) {
+            const lbl = _svgEl('text', {
+                x: xPos(h).toFixed(1), y: (H - 6).toString(),
+                'text-anchor': 'middle', fill: 'rgba(255,255,255,0.5)',
+                'font-size': '9', 'font-family': 'inherit'
+            });
+            lbl.textContent = (h < 10 ? '0' : '') + h + ':00';
+            frag.appendChild(lbl);
+        }
+    }
+
+    svg.replaceChildren(frag);
+
+    // Layout-Daten für Graph-Interaktion speichern
+    _dayTempLayout = { padL: padL, padR: padR, padT: padT, padB: padB, plotW: plotW, plotH: plotH, n: n, tMin: tMin, tRange: tRange };
+}
+
+// ----------------------------------------
+// Funktion: updateDayRainGraph
+// Verantwortlichkeit: Zeichnet den stündlichen Regenwahrscheinlichkeits-Graphen (Fläche) in das Day-Sheet.
+// Verändert: DOM (day-rain-graph SVG Kindelemente)
+// Verändert NICHT: state
+// Architektur-Hinweis: Fixe Y-Skala 0–100%. Gradient-Fill. Kein Sonderfall bei 0%.
+// ----------------------------------------
+function updateDayRainGraph(dayData) {
+    const svg = $.dayRainGraph;
+    if (dayData.length === 0) { svg.replaceChildren(); return; }
+
+    const W = 320, H = 160;
+    const padL = 10, padR = 30, padT = 10, padB = 25;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+    const n = dayData.length;
+
+    // Fixe Y-Skala: 0–100
+    function xPos(i) { return padL + (plotW / (n - 1)) * i; }
+    function yPos(val) { return padT + plotH - (val / 100) * plotH; }
+
+    const frag = document.createDocumentFragment();
+
+    // Gradient-Definition
+    const defs = _svgEl('defs', {});
+    const grad = _svgEl('linearGradient', { id: 'rainAreaGrad', x1: '0', y1: '0', x2: '0', y2: '1' });
+    grad.appendChild(_svgEl('stop', { offset: '0%', 'stop-color': '#38bdf8', 'stop-opacity': '0.20' }));
+    grad.appendChild(_svgEl('stop', { offset: '100%', 'stop-color': '#38bdf8', 'stop-opacity': '0.05' }));
+    defs.appendChild(grad);
+    frag.appendChild(defs);
+
+    // Horizontale Grid-Lines bei 0%, 20%, 40%, 60%, 80%, 100%
+    const gridVals = [0, 20, 40, 60, 80, 100];
+    for (let g = 0; g < gridVals.length; g++) {
+        const yy = yPos(gridVals[g]);
+        frag.appendChild(_svgEl('line', {
+            x1: padL, y1: yy.toFixed(1), x2: W - padR, y2: yy.toFixed(1),
+            stroke: 'rgba(255,255,255,0.08)', 'stroke-width': '0.5'
+        }));
+        // Prozentwerte rechts
+        const label = _svgEl('text', {
+            x: (W - padR + 4).toString(), y: (yy + 3).toFixed(1),
+            'text-anchor': 'start', fill: 'rgba(255,255,255,0.4)',
+            'font-size': '8', 'font-family': 'inherit'
+        });
+        label.textContent = gridVals[g] + '%';
+        frag.appendChild(label);
+    }
+
+    // Flächen-Pfad bauen
+    let linePath = '';
+    let areaPath = '';
+    for (let i = 0; i < n; i++) {
+        const px = xPos(i).toFixed(1);
+        const py = yPos(dayData[i].rainProbability).toFixed(1);
+        linePath += (i === 0 ? 'M' : 'L') + px + ',' + py;
+        areaPath += (i === 0 ? 'M' : 'L') + px + ',' + py;
+    }
+    // Fläche schließen: unten entlang zurück
+    areaPath += 'L' + xPos(n - 1).toFixed(1) + ',' + yPos(0).toFixed(1);
+    areaPath += 'L' + xPos(0).toFixed(1) + ',' + yPos(0).toFixed(1) + 'Z';
+
+    // Gefüllte Fläche
+    frag.appendChild(_svgEl('path', {
+        d: areaPath, fill: 'url(#rainAreaGrad)'
+    }));
+
+    // Linie
+    frag.appendChild(_svgEl('path', {
+        d: linePath, fill: 'none', stroke: '#38bdf8',
+        'stroke-width': '1.5', 'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+        'stroke-opacity': '0.7', class: 'graph-line'
+    }));
+
+    // X-Achsen-Labels: 00, 06, 12, 18
+    const xLabels = [0, 6, 12, 18];
+    for (let li = 0; li < xLabels.length; li++) {
+        const h = xLabels[li];
+        if (h < n) {
+            const lbl = _svgEl('text', {
+                x: xPos(h).toFixed(1), y: (H - 6).toString(),
+                'text-anchor': 'middle', fill: 'rgba(255,255,255,0.5)',
+                'font-size': '9', 'font-family': 'inherit'
+            });
+            lbl.textContent = (h < 10 ? '0' : '') + h + ':00';
+            frag.appendChild(lbl);
+        }
+    }
+
+    svg.replaceChildren(frag);
+
+    // Layout-Daten für Graph-Interaktion speichern
+    _dayRainLayout = { padL: padL, padR: padR, padT: padT, padB: padB, plotW: plotW, plotH: plotH, n: n };
+}
+
+
+// ========================================
+// GRAPH-INTERAKTION (Tages-Detail)
+// Pointermove über SVG → Highlight-Linie + Tooltip.
+// Kein State-Mutation. Kein Reflow-Spam.
+// ========================================
+
+// ----------------------------------------
+// Funktion: handleDayGraphPointer
+// Verantwortlichkeit: Zeigt Highlight-Linie, Punkt und Tooltip bei Pointer-Bewegung über einen Day-Graph.
+// Verändert: DOM (SVG highlight-Gruppe, Tooltip)
+// Verändert NICHT: state
+// ----------------------------------------
+function handleDayGraphPointer(e, svg, layout, valueFn) {
+    if (!_currentDayData.length || !layout) return;
+    const rect = svg.getBoundingClientRect();
+    const relX = (e.clientX - rect.left) / rect.width;
+    const svgX = relX * 320;
+    const rawIdx = (svgX - layout.padL) / layout.plotW * (layout.n - 1);
+    const idx = Math.max(0, Math.min(layout.n - 1, Math.round(rawIdx)));
+    const d = _currentDayData[idx];
+    if (!d) return;
+
+    const cx = layout.padL + (layout.plotW / (layout.n - 1)) * idx;
+    const cy = valueFn(d, layout);
+
+    // Highlight-Gruppe im SVG erzeugen oder aktualisieren
+    let hl = svg.querySelector('[data-hl]');
+    if (!hl) {
+        hl = document.createElementNS(_svgNS, 'g');
+        hl.setAttribute('data-hl', '1');
+        svg.appendChild(hl);
+    }
+    hl.replaceChildren(
+        _svgEl('line', {
+            x1: cx.toFixed(1), y1: layout.padT.toString(),
+            x2: cx.toFixed(1), y2: (layout.padT + layout.plotH).toString(),
+            stroke: 'rgba(255,255,255,0.3)', 'stroke-width': '1', 'stroke-dasharray': '3,3'
+        }),
+        _svgEl('circle', {
+            cx: cx.toFixed(1), cy: cy.toFixed(1), r: '5',
+            fill: 'white', 'fill-opacity': '0.9'
+        })
+    );
+
+    // Tooltip positionieren (fixed)
+    const hStr = new Date(d.timeISO).getHours().toString().padStart(2, '0') + ':00';
+    $.dayGraphTooltip.textContent = hStr + '   ' + d.temperature + '°   ' + d.rainProbability + '%';
+    $.dayGraphTooltip.classList.remove('hidden');
+    const ttW = $.dayGraphTooltip.offsetWidth;
+    let left = e.clientX - ttW / 2;
+    if (left < 8) left = 8;
+    if (left + ttW > window.innerWidth - 8) left = window.innerWidth - ttW - 8;
+    $.dayGraphTooltip.style.left = left + 'px';
+    $.dayGraphTooltip.style.top = (rect.top - 36) + 'px';
+}
+
+// ----------------------------------------
+// Funktion: handleDayGraphLeave
+// Verantwortlichkeit: Entfernt Highlight und Tooltip beim Verlassen des Graphen.
+// Verändert: DOM (SVG highlight-Gruppe, Tooltip)
+// Verändert NICHT: state
+// ----------------------------------------
+function handleDayGraphLeave(svg) {
+    const hl = svg.querySelector('[data-hl]');
+    if (hl) hl.remove();
+    $.dayGraphTooltip.classList.add('hidden');
+}
+
+
+// ========================================
+// SHEET DRAG-TO-DISMISS
+// Pointer-Events auf dem Drag-Handle steuern das Herunterziehen.
+// Nur vertikale Bewegung nach unten. Über 120px → Sheet schließen.
+// ========================================
+
+let _isDragging = false;
+let _dragStartY = 0;
+let _dragCurrentOffset = 0;
+
+// ----------------------------------------
+// Funktion: handleSheetPointerDown
+// Verantwortlichkeit: Startet den Drag-Vorgang auf dem Sheet-Handle.
+// Verändert: Drag-State (_isDragging, _dragStartY)
+// Verändert NICHT: state
+// ----------------------------------------
+function handleSheetPointerDown(e) {
+    _isDragging = true;
+    _dragStartY = e.clientY;
+    _dragCurrentOffset = 0;
+    $.daySheet.classList.add('sheet-dragging');
+    $.daySheetHandle.setPointerCapture(e.pointerId);
+    e.preventDefault();
+}
+
+// ----------------------------------------
+// Funktion: handleSheetPointerMove
+// Verantwortlichkeit: Aktualisiert die Sheet-Position während des Drags.
+// Verändert: DOM (day-sheet transform, overlay opacity)
+// Verändert NICHT: state
+// ----------------------------------------
+function handleSheetPointerMove(e) {
+    if (!_isDragging) return;
+    const dy = e.clientY - _dragStartY;
+    _dragCurrentOffset = Math.max(0, dy);
+    $.daySheet.style.transform = 'translateY(' + _dragCurrentOffset + 'px)';
+    // Overlay abdunkeln proportional zum Drag
+    const progress = Math.min(_dragCurrentOffset / 300, 1);
+    $.daySheetOverlay.style.opacity = (1 - progress * 0.5).toString();
+}
+
+// ----------------------------------------
+// Funktion: handleSheetPointerUp
+// Verantwortlichkeit: Beendet den Drag. > 120px → schließen, sonst snap zurück.
+// Verändert: state (via handleCloseDaySheet), DOM
+// Verändert NICHT: —
+// ----------------------------------------
+function handleSheetPointerUp() {
+    if (!_isDragging) return;
+    _isDragging = false;
+    $.daySheet.classList.remove('sheet-dragging');
+    $.daySheet.style.transform = '';
+    $.daySheetOverlay.style.opacity = '';
+
+    if (_dragCurrentOffset > 120) {
+        // Schwelle überschritten → Sheet schließen
+        handleCloseDaySheet();
+    } else {
+        // Snap zurück zur offenen Position
+        $.daySheet.classList.add('sheet-open');
+    }
+    _dragCurrentOffset = 0;
+}
+
+
+// ========================================
+// EVENT-HANDLER
+// Verändern ausschließlich state → updateUI().
+// Kein DOM-Zugriff in Event-Handlern.
+// Nur benannte Funktionen. Keine anonymen Handler.
+// ========================================
+
+// ----------------------------------------
+// Funktion: handleToggleCity
+// Verantwortlichkeit: Öffnet das Stadteingabe-Overlay.
+// Verändert: state.showCityInput, state.cityInputValue
+// Verändert NICHT: DOM
+// ----------------------------------------
+function handleToggleCity() {
+    state.showCityInput = true;
+    state.cityInputValue = '';
+    updateUI();
+}
+
+// ----------------------------------------
+// Funktion: handleCancelCity
+// Verantwortlichkeit: Schließt das Stadteingabe-Overlay.
+// Verändert: state.showCityInput, state.cityInputValue
+// Verändert NICHT: DOM
+// ----------------------------------------
+function handleCancelCity() {
+    state.showCityInput = false;
+    state.cityInputValue = '';
+    updateUI();
+}
+
+// ----------------------------------------
+// Funktion: handleCityInput
+// Verantwortlichkeit: Synchronisiert den Eingabewert in den State.
+// Verändert: state.cityInputValue
+// Verändert NICHT: DOM
+// Architektur-Hinweis: Liest den Wert aus dem Event-Objekt (e.target.value).
+// ----------------------------------------
+function handleCityInput(e) {
+    state.cityInputValue = e.target.value;
+    updateUI();
+}
+
+// ----------------------------------------
+// Funktion: handleCitySubmit
+// Verantwortlichkeit: Löst die Stadtsuche mit dem aktuellen Eingabewert aus.
+// Verändert: state.showCityInput, state.cityInputValue
+// Verändert NICHT: DOM
+// ----------------------------------------
+function handleCitySubmit() {
+    const query = state.cityInputValue.trim();
+    if (!query) return;
+    state.showCityInput = false;
+    state.cityInputValue = '';
+    updateUI();
+    searchCity(query);
+}
+
+// ----------------------------------------
+// Funktion: handleCityKeydown
+// Verantwortlichkeit: Reagiert auf Enter-Taste im Stadteingabe-Feld.
+// Verändert: state (delegiert an handleCitySubmit)
+// Verändert NICHT: DOM
+// ----------------------------------------
+function handleCityKeydown(e) {
+    if (e.key === 'Enter') {
+        handleCitySubmit();
+    }
+}
+
+// ----------------------------------------
+// Funktion: handleRefresh
+// Verantwortlichkeit: Löst einen erneuten Wetter-Fetch aus.
+// Verändert: Nichts direkt (delegiert an fetchWeather)
+// Verändert NICHT: DOM
+// ----------------------------------------
+function handleRefresh() {
+    if (state.latitude !== null && state.longitude !== null) {
+        fetchWeather();
+    }
+}
+
+// ----------------------------------------
+// Funktion: handleForecastDayClick
+// Verantwortlichkeit: Öffnet das Tages-Detail-Sheet mit Slide-Animation.
+// Verändert: state.selectedDayIndex, state.isSheetOpen
+// Architektur-Hinweis: Zweistufige rAF für saubere CSS-Transition.
+// ----------------------------------------
+function handleForecastDayClick(e) {
+    const idx = parseInt(e.currentTarget.getAttribute('data-day-index'));
+    state.selectedDayIndex = idx;
+    state.isSheetOpen = true;
+    updateUI();
+    // Zweistufige rAF: Browser rendert Overlay + Sheet bei translateY(100%), dann Animation starten
+    requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+            $.daySheet.classList.add('sheet-open');
+        });
+    });
+}
+
+// ----------------------------------------
+// Funktion: handleCloseDaySheet
+// Verantwortlichkeit: Schließt das Tages-Detail-Sheet mit Slide-Out-Animation.
+// Verändert: state.selectedDayIndex, state.isSheetOpen
+// Architektur-Hinweis: Sheet fährt nach unten, danach Overlay ausblenden + State zurücksetzen.
+// ----------------------------------------
+function handleCloseDaySheet() {
+    state.isSheetOpen = false;
+    $.daySheet.classList.remove('sheet-open');
+    // Highlight + Tooltip aufräumen
+    handleDayGraphLeave($.dayTempGraph);
+    handleDayGraphLeave($.dayRainGraph);
+
+    $.daySheet.addEventListener('transitionend', function onSheetClosed() {
+        $.daySheet.removeEventListener('transitionend', onSheetClosed);
+        state.selectedDayIndex = null;
+        $.daySheetOverlay.classList.remove('sheet-active');
+        _currentDayData = [];
+    }, { once: true });
+    // Fallback falls transitionend nicht feuert
+    setTimeout(function() {
+        if (state.selectedDayIndex !== null && !state.isSheetOpen) {
+            state.selectedDayIndex = null;
+            $.daySheetOverlay.classList.remove('sheet-active');
+            _currentDayData = [];
+        }
+    }, 400);
+}
+
+
+// ========================================
+// ASYNC / SIDE-EFFECTS
+// Verändern ausschließlich state → updateUI().
+// Kein DOM-Zugriff. Fehler laufen über state.error.
+// ========================================
+
+// ----------------------------------------
+// Funktion: detectLocation
+// Verantwortlichkeit: Ermittelt die GPS-Koordinaten des Nutzers.
+// Verändert: state (via setLocation, setError, setLoading)
+// Verändert NICHT: DOM
+// Architektur-Hinweis: Erster Side-Effect im Lifecycle. Löst bei Erfolg fetchWeather() aus.
+// ----------------------------------------
+function detectLocation() {
+    setLoading(true);
+
+    if (!navigator.geolocation) {
+        setError('Geolocation wird von diesem Browser nicht unterstützt.');
+        return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+        function onGpsSuccess(position) {
+            setLocation(position.coords.latitude, position.coords.longitude, 'Mein Standort');
+            fetchWeather();
+        },
+        function onGpsError() {
+            setError('Standort konnte nicht ermittelt werden. Bitte Stadt manuell eingeben.');
+        },
+        { enableHighAccuracy: false, timeout: 10000 }
+    );
+}
+
+// ----------------------------------------
+// Funktion: fetchWeather
+// Verantwortlichkeit: Ruft die Open-Meteo Forecast API ab und schreibt die Daten in state.
+// Verändert: state (via setWeatherData, setError, setLoading)
+// Verändert NICHT: DOM
+// Architektur-Hinweis: Kein Caching – jeder Aufruf ist ein frischer Fetch.
+// ----------------------------------------
+async function fetchWeather() {
+    setLoading(true);
+
+    const url = 'https://api.open-meteo.com/v1/forecast'
+        + '?latitude=' + state.latitude
+        + '&longitude=' + state.longitude
+        + '&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m'
+        + '&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max,wind_speed_10m_max'
+        + '&timezone=auto'
+        + '&forecast_days=10'
+        + '&hourly=temperature_2m,weather_code,precipitation_probability';
+
+    try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const data = await response.json();
+        setWeatherData(data);
+    } catch (err) {
+        setError('Wetterdaten konnten nicht geladen werden.');
+    }
+}
+
+// ----------------------------------------
+// Funktion: searchCity
+// Verantwortlichkeit: Sucht eine Stadt über die Open-Meteo Geocoding API.
+// Verändert: state (via setLocation, setError, setLoading)
+// Verändert NICHT: DOM
+// Architektur-Hinweis: Bei Erfolg wird automatisch fetchWeather() ausgelöst.
+// ----------------------------------------
+async function searchCity(query) {
+    setLoading(true);
+
+    const url = 'https://geocoding-api.open-meteo.com/v1/search'
+        + '?name=' + encodeURIComponent(query)
+        + '&count=1'
+        + '&language=de'
+        + '&format=json';
+
+    try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const data = await response.json();
+
+        if (!data.results || data.results.length === 0) {
+            setError('Stadt „' + query + '" wurde nicht gefunden.');
+            return;
+        }
+
+        const result = data.results[0];
+        setLocation(result.latitude, result.longitude, result.name);
+        fetchWeather();
+    } catch (err) {
+        setError('Stadtsuche fehlgeschlagen.');
+    }
+}
+
+
+// ========================================
+// LIFECYCLE
+// Zwingende Reihenfolge:
+// 1. DOM cachen
+// 2. Events binden
+// 3. State initialisieren
+// 4. UI aktualisieren
+// 5. Side-Effects starten (GPS → Forecast)
+// ========================================
+
+// ----------------------------------------
+// Funktion: bindEvents
+// Verantwortlichkeit: Bindet alle Event-Handler an die gecachten DOM-Elemente.
+// Verändert: DOM (Event-Listener)
+// Verändert NICHT: state
+// Architektur-Hinweis: Ausschließlich benannte Funktionen. Keine anonymen Handler.
+// ----------------------------------------
+function bindEvents() {
+    $.cityToggleBtn.addEventListener('click', handleToggleCity);
+    $.cityCancelBtn.addEventListener('click', handleCancelCity);
+    $.citySubmitBtn.addEventListener('click', handleCitySubmit);
+    $.cityInput.addEventListener('input', handleCityInput);
+    $.cityInput.addEventListener('keydown', handleCityKeydown);
+    $.refreshBtn.addEventListener('click', handleRefresh);
+
+    // Tages-Detail-Sheet: Klick auf Overlay (nicht auf Sheet selbst) schließt
+    $.daySheetOverlay.addEventListener('click', function handleSheetOverlayClick(e) {
+        if (e.target === $.daySheetOverlay) handleCloseDaySheet();
+    });
+
+    // Sheet Drag-to-Dismiss auf dem Handle
+    $.daySheetHandle.addEventListener('pointerdown', handleSheetPointerDown);
+    $.daySheetHandle.addEventListener('pointermove', handleSheetPointerMove);
+    $.daySheetHandle.addEventListener('pointerup', handleSheetPointerUp);
+    $.daySheetHandle.addEventListener('pointercancel', handleSheetPointerUp);
+
+    // iOS: Touch-Scrolling im Sheet komplett unterbinden
+    $.daySheet.addEventListener('touchmove', function(e) {
+        e.preventDefault();
+    }, { passive: false });
+
+    // Graph-Interaktion: Temperatur-Graph
+    $.dayTempGraph.addEventListener('pointermove', function handleTempPointer(e) {
+        handleDayGraphPointer(e, $.dayTempGraph, _dayTempLayout, function(d, L) {
+            return L.padT + L.plotH - ((d.temperature - L.tMin) / L.tRange) * L.plotH;
+        });
+    });
+    $.dayTempGraph.addEventListener('pointerleave', function handleTempLeave() {
+        handleDayGraphLeave($.dayTempGraph);
+    });
+
+    // Graph-Interaktion: Regen-Graph
+    $.dayRainGraph.addEventListener('pointermove', function handleRainPointer(e) {
+        handleDayGraphPointer(e, $.dayRainGraph, _dayRainLayout, function(d, L) {
+            return L.padT + L.plotH - (d.rainProbability / 100) * L.plotH;
+        });
+    });
+    $.dayRainGraph.addEventListener('pointerleave', function handleRainLeave() {
+        handleDayGraphLeave($.dayRainGraph);
+    });
+}
+
+// ----------------------------------------
+// Funktion: init
+// Verantwortlichkeit: Startet die Anwendung in der vorgeschriebenen Lifecycle-Reihenfolge.
+// Verändert: Alles (orchestriert den gesamten App-Start)
+// Verändert NICHT: —
+// Architektur-Hinweis: Einziger Einstiegspunkt der Anwendung.
+// ----------------------------------------
+function init() {
+    cacheDom();                  // 1. DOM cachen
+    bindEvents();                // 2. Events binden
+    state.isLoading = true;      // 3. State initialisieren
+    updateUI();                  // 4. UI aktualisieren
+    detectLocation();            // 5. Side-Effects starten
+}
+
+init();

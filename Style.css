@@ -1,0 +1,275 @@
+body {
+    /* Kein Gradient auf body — ausschließlich #background-layer rendert den Himmel.
+       Solid-Color als Fallback und Overscroll-Abdeckung. */
+    background: #1478c2;
+    -webkit-tap-highlight-color: transparent;
+}
+/* ================================================================
+   SKY-SYSTEM — Apple Weather Himmel-Reproduktion
+   Image-basiert mit WebP Assets + CSS-Gradient Fallback.
+   Drift-Animation via background-position (kein transform,
+   vermeidet GPU-Tile-Nähte auf iOS Safari).
+   ================================================================ */
+
+/* Basis-Container: fixed, überdeckt safe-area + Overscroll-Puffer */
+.background-layer {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    transition: opacity 0.6s ease;
+}
+
+/* Sky-Image: Oversized für Drift-Animation (120% = 10% Overscan pro Seite).
+   Startet mit opacity:0. Klasse .sky-bg-loaded (gesetzt nach Image-Load) fadet ein.
+   Der darunter liegende CSS-Gradient bleibt als permanenter Fallback sichtbar. */
+.sky-bg {
+    position: absolute;
+    inset: 0;
+    background-size: 120% 120%;
+    background-position: center center;
+    background-repeat: no-repeat;
+    opacity: 0;
+    transition: opacity 1.4s ease;
+    animation: skyDrift 80s ease-in-out infinite alternate;
+    will-change: background-position;
+}
+.sky-bg.sky-bg-loaded {
+    opacity: 1;
+}
+
+/* Sanfte Drift — verschiebt Bild um max 10% in jede Richtung.
+   Overscan von 120% stellt sicher, dass Ränder nie sichtbar sind. */
+@keyframes skyDrift {
+    0%   { background-position: 45% 45%; }
+    25%  { background-position: 55% 48%; }
+    50%  { background-position: 52% 55%; }
+    75%  { background-position: 48% 52%; }
+    100% { background-position: 45% 45%; }
+}
+
+/* Gradient-Fallback: sichtbar solange Bild lädt oder fehlt */
+.sky-gradient {
+    position: absolute;
+    inset: 0;
+    transition: background 1.4s ease, opacity 1.4s ease;
+}
+
+/* Niederschlag-Overlay: über dem Sky-Bild */
+.sky-precip {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 1.4s ease;
+}
+.sky-stars::before {
+    box-shadow:
+            12px 18px 1px 0px rgba(255,255,255,0.55),
+            85px 42px 0px 0px rgba(255,255,255,0.35),
+            140px 70px 1px 0px rgba(255,255,255,0.6),
+            200px 25px 0px 0px rgba(255,255,255,0.4),
+            260px 90px 1px 0px rgba(255,255,255,0.55),
+            310px 55px 0px 0px rgba(255,255,255,0.3),
+            45px 130px 1px 0px rgba(255,255,255,0.6),
+            110px 160px 0px 0px rgba(255,255,255,0.4),
+            175px 140px 1px 0px rgba(255,255,255,0.55),
+            240px 175px 0px 0px rgba(255,255,255,0.35),
+            300px 145px 1px 0px rgba(255,255,255,0.45),
+            30px 220px 0px 0px rgba(255,255,255,0.5),
+            95px 250px 1px 0px rgba(255,255,255,0.6),
+            160px 230px 0px 0px rgba(255,255,255,0.35),
+            225px 260px 1px 0px rgba(255,255,255,0.5),
+            290px 240px 0px 0px rgba(255,255,255,0.4),
+            55px 310px 1px 0px rgba(255,255,255,0.5),
+            130px 340px 0px 0px rgba(255,255,255,0.3),
+            195px 320px 1px 0px rgba(255,255,255,0.6),
+            270px 350px 0px 0px rgba(255,255,255,0.4);
+    animation: twinkleA 6s ease-in-out infinite;
+}
+.sky-stars::after {
+    box-shadow:
+            50px 60px 0px 0px rgba(255,255,255,0.4),
+            120px 30px 1px 0px rgba(255,255,255,0.5),
+            180px 100px 0px 0px rgba(255,255,255,0.35),
+            235px 50px 1px 0px rgba(255,255,255,0.6),
+            280px 120px 0px 0px rgba(255,255,255,0.4),
+            20px 180px 1px 0px rgba(255,255,255,0.5),
+            75px 200px 0px 0px rgba(255,255,255,0.35),
+            150px 190px 1px 0px rgba(255,255,255,0.6),
+            210px 210px 0px 0px rgba(255,255,255,0.4),
+            275px 195px 1px 0px rgba(255,255,255,0.5),
+            40px 280px 0px 0px rgba(255,255,255,0.3),
+            105px 300px 1px 0px rgba(255,255,255,0.5),
+            170px 275px 0px 0px rgba(255,255,255,0.4),
+            250px 310px 1px 0px rgba(255,255,255,0.6),
+            305px 290px 0px 0px rgba(255,255,255,0.35);
+    animation: twinkleA 6s ease-in-out infinite 3s;
+}
+@keyframes twinkleA {
+    0%, 100% { opacity: 0.25; }
+    50% { opacity: 1; }
+}
+
+/* ----------------------------------------------------------------
+   NIEDERSCHLAG
+   Regen-Referenz: München — diagonale dünne Streifen, ~105°
+   Schnee: langsam fallende weiche Punkte mit leichtem Seitendrift
+   ---------------------------------------------------------------- */
+.sky-precip { background-size: 100% 100%; }
+
+.sky-rain .sky-precip {
+    background-image: repeating-linear-gradient(
+            105deg,
+            transparent,
+            transparent 6px,
+            rgba(200, 220, 255, 0.045) 6px,
+            rgba(200, 220, 255, 0.045) 7px
+    );
+    animation: rainFall 1s linear infinite;
+}
+.sky-snow .sky-precip {
+    background-image:
+            radial-gradient(circle 2px at 12% 18%, rgba(255,255,255,0.4) 0%, transparent 100%),
+            radial-gradient(circle 1px at 28% 42%, rgba(255,255,255,0.3) 0%, transparent 100%),
+            radial-gradient(circle 2px at 48% 12%, rgba(255,255,255,0.35) 0%, transparent 100%),
+            radial-gradient(circle 1px at 68% 52%, rgba(255,255,255,0.25) 0%, transparent 100%),
+            radial-gradient(circle 2px at 85% 28%, rgba(255,255,255,0.3) 0%, transparent 100%),
+            radial-gradient(circle 1px at 8% 68%, rgba(255,255,255,0.3) 0%, transparent 100%),
+            radial-gradient(circle 2px at 38% 78%, rgba(255,255,255,0.35) 0%, transparent 100%),
+            radial-gradient(circle 1px at 58% 62%, rgba(255,255,255,0.25) 0%, transparent 100%),
+            radial-gradient(circle 1px at 82% 82%, rgba(255,255,255,0.3) 0%, transparent 100%),
+            radial-gradient(circle 2px at 22% 88%, rgba(255,255,255,0.35) 0%, transparent 100%);
+    background-size: 180px 180px;
+    animation: snowFall 5s linear infinite;
+}
+@keyframes rainFall {
+    from { transform: translateY(-60px) translateZ(0); }
+    to { transform: translateY(0) translateZ(0); }
+}
+@keyframes snowFall {
+    from { transform: translate(0, -60px) translateZ(0); }
+    to { transform: translate(-12px, 0) translateZ(0); }
+}
+
+/* ================================================================
+   WETTERZUSTÄNDE — Layer-Sichtbarkeit pro Zustand
+   Jede Klasse auf #background-layer steuert welche Layer sichtbar sind.
+   Referenz-Mapping:
+     sky-clear        → Sylt (Sonnen-Bloom, klares Blau)
+     sky-partly       → Slovenska Bistrica (leichte Wolken, Pastellblau)
+     sky-cloudy       → England (flaches Grau, dichte Decke)
+     sky-rain         → München (dunkel, Regen-Streifen)
+     sky-snow         → München-Variante (kalt, Schnee)
+     sky-night        → New York (klare Nacht, Sterne)
+     sky-night-cloudy → Hongkong (bewölkte Nacht, Wolkenmassen)
+   ================================================================ */
+
+/* Klare Nacht — Referenz: New York */
+.sky-night .sky-stars { opacity: 0.7; }
+.sky-night .sky-atmosphere { opacity: 0.2; }
+
+/* Bewölkte Nacht — Referenz: Hongkong */
+.sky-night-cloudy .sky-stars { opacity: 0.25; }
+.sky-night-cloudy .sky-clouds-far { opacity: 0.25; }
+.sky-night-cloudy .sky-clouds-mid { opacity: 0.4; }
+.sky-night-cloudy .sky-clouds-near { opacity: 0.35; }
+
+/* Klarer Himmel — Referenz: Sylt */
+.sky-clear .sky-atmosphere { opacity: 0.7; }
+.sky-clear .sky-haze { opacity: 0.6; }
+
+/* Teilweise bewölkt — Referenz: Slovenska Bistrica */
+.sky-partly .sky-atmosphere { opacity: 0.5; }
+.sky-partly .sky-haze { opacity: 0.25; }
+.sky-partly .sky-clouds-far { opacity: 0.35; }
+.sky-partly .sky-clouds-mid { opacity: 0.55; }
+.sky-partly .sky-clouds-near { opacity: 0.4; }
+
+/* Bewölkt — Referenz: England */
+.sky-cloudy .sky-atmosphere { opacity: 0.15; }
+.sky-cloudy .sky-clouds-far { opacity: 0.6; }
+.sky-cloudy .sky-clouds-mid { opacity: 0.85; }
+.sky-cloudy .sky-clouds-near { opacity: 0.75; }
+
+/* Regen — Referenz: München */
+.sky-rain .sky-clouds-far { opacity: 0.55; }
+.sky-rain .sky-clouds-mid { opacity: 0.9; }
+.sky-rain .sky-clouds-near { opacity: 0.8; }
+.sky-rain .sky-precip { opacity: 0.4; }
+
+/* Schnee — kalt, weich, weniger dichte Wolken als Regen */
+.sky-snow .sky-atmosphere { opacity: 0.2; }
+.sky-snow .sky-clouds-far { opacity: 0.45; }
+.sky-snow .sky-clouds-mid { opacity: 0.6; }
+.sky-snow .sky-clouds-near { opacity: 0.5; }
+.sky-snow .sky-precip { opacity: 0.35; }
+.glass {
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+.spinner {
+    animation: spin 1s linear infinite;
+}
+/* Temperature Graph */
+.graph-line {
+    stroke-dasharray: 1000;
+    stroke-dashoffset: 1000;
+    animation: drawLine 1.5s ease forwards;
+}
+.graph-dot {
+    opacity: 0;
+    animation: fadeInDot 0.3s ease forwards;
+}
+@keyframes drawLine {
+    to { stroke-dashoffset: 0; }
+}
+@keyframes fadeInDot {
+    to { opacity: 1; }
+}
+.graph-tooltip {
+    pointer-events: none;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+#hourly-scroll::-webkit-scrollbar {
+    display: none;
+}
+
+/* Sheet-Overlay Fade */
+#day-sheet-overlay {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 350ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+#day-sheet-overlay.sheet-active {
+    opacity: 1;
+    pointer-events: auto;
+}
+/* Sheet Panel Slide-Animation */
+#day-sheet {
+    transform: translateY(100%);
+    transition: transform 350ms cubic-bezier(0.32, 0.72, 0, 1);
+    will-change: transform;
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: touch;
+    overflow-y: hidden;
+}
+#day-sheet.sheet-open {
+    transform: translateY(0);
+}
+/* Drag: Transition deaktivieren während Ziehen */
+#day-sheet.sheet-dragging {
+    transition: none !important;
+}
+/* Graph-Interaktions-Tooltip (fixed, schwebt über allem) */
+.day-graph-tooltip {
+    pointer-events: none;
+    z-index: 60;
+}
