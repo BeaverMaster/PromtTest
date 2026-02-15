@@ -193,6 +193,7 @@ function cacheDom() {
         tempGraphSection:document.getElementById('temp-graph-section'),
         graphTooltip:    document.getElementById('graph-tooltip'),
         hourlyScroll:    document.getElementById('hourly-scroll'),
+        hourlySection:   document.getElementById('hourly-section'),
         daySheetOverlay: document.getElementById('day-sheet-overlay'),
         daySheet:        document.getElementById('day-sheet'),
         daySheetTitle:   document.getElementById('day-sheet-title'),
@@ -1383,6 +1384,25 @@ function handleRefresh() {
 }
 
 // ----------------------------------------
+// Funktion: handleHourlySectionClick
+// Verantwortlichkeit: Öffnet das Tages-Detail-Sheet für Heute (Index 0) bei Klick auf die Hourly-Anzeige.
+// Verändert: state.selectedDayIndex, state.isSheetOpen
+// Verändert NICHT: DOM
+// Architektur-Hinweis: Delegiert Sheet-Öffnung an gleiche rAF-Logik wie handleForecastDayClick.
+// ----------------------------------------
+function handleHourlySectionClick() {
+    if (state.forecast.length === 0) return;
+    state.selectedDayIndex = 0;
+    state.isSheetOpen = true;
+    updateUI();
+    requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+            $.daySheet.classList.add('sheet-open');
+        });
+    });
+}
+
+// ----------------------------------------
 // Funktion: handleForecastDayClick
 // Verantwortlichkeit: Öffnet das Tages-Detail-Sheet mit Slide-Animation.
 // Verändert: state.selectedDayIndex, state.isSheetOpen
@@ -1552,6 +1572,7 @@ function bindEvents() {
     $.cityInput.addEventListener('input', handleCityInput);
     $.cityInput.addEventListener('keydown', handleCityKeydown);
     $.refreshBtn.addEventListener('click', handleRefresh);
+    $.hourlySection.addEventListener('click', handleHourlySectionClick);
 
     // Tages-Detail-Sheet: Klick auf Overlay (nicht auf Sheet selbst) schließt
     $.daySheetOverlay.addEventListener('click', function handleSheetOverlayClick(e) {
