@@ -427,7 +427,7 @@ Nach Wetterdaten-Empfang das passende Bild laden, Rest im Hintergrund:
 // Aktives Bild laden
 function loadSkyAsset(variant) {
     return new Promise(function(resolve, reject) {
-        var img = new Image();
+        const img = new Image();
         img.onload = function() { resolve(variant); };
         img.onerror = function() { reject(variant); };
         img.src = 'assets/sky/' + variant + '-drift.webp';
@@ -436,9 +436,9 @@ function loadSkyAsset(variant) {
 
 // Alle Varianten im Hintergrund vorladen (nach Initial-Load)
 function preloadAllSkyAssets() {
-    var variants = ['clear-day','partly-day','partly-day-heavy','cloudy-day','rain','snow','clear-night','cloudy-night'];
-    for (var i = 0; i < variants.length; i++) {
-        var img = new Image();
+    const variants = ['clear-day','partly-day','partly-day-heavy','cloudy-day','rain','snow','clear-night','cloudy-night'];
+    for (let i = 0; i < variants.length; i++) {
+        const img = new Image();
         img.src = 'assets/sky/' + variants[i] + '-drift.webp';
     }
 }
