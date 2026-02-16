@@ -514,10 +514,10 @@ function loadSkyAsset(variant) {
 // Architektur-Hinweis: Wird nach dem ersten erfolgreichen Wetter-Fetch aufgerufen.
 // ----------------------------------------
 function preloadAllSkyAssets() {
-    var variants = ['clear-day', 'partly-day', 'partly-day-heavy', 'cloudy-day', 'rain', 'snow', 'clear-night', 'cloudy-night'];
-    for (var i = 0; i < variants.length; i++) {
+    const variants = ['clear-day', 'partly-day', 'partly-day-heavy', 'cloudy-day', 'rain', 'snow', 'clear-night', 'cloudy-night'];
+    for (let i = 0; i < variants.length; i++) {
         if (variants[i] !== _currentSkyVariant) {
-            var img = new Image();
+            const img = new Image();
         }
     }
 }
