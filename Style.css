@@ -207,9 +207,9 @@ body {
 .sky-snow .sky-clouds-near { opacity: 0.5; }
 .sky-snow .sky-precip { opacity: 0.35; }
 .glass {
-    background: rgba(255, 255, 255, 0.15);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    background: rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
 }
 @keyframes spin {
     to { transform: rotate(360deg); }
