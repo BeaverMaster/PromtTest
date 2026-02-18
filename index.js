@@ -84,6 +84,42 @@ function formatTime(isoStr) {
 }
 
 // ----------------------------------------
+// Funktion: calcNowRainPosition
+// Verantwortlichkeit: Berechnet X/Y-Position des "Jetzt"-Indikators im Regen-Graphen.
+// Verändert: Nichts (pure Funktion)
+// Verändert NICHT: state, DOM
+// Architektur-Hinweis: Gibt null zurück wenn keine Tagesdaten vorhanden.
+//   X = lineares Mapping der aktuellen Stunde auf die Plot-Breite.
+//   Y = lineare Interpolation der Regenwahrscheinlichkeit zwischen zwei Stunden.
+// ----------------------------------------
+function calcNowRainPosition(dayData, layout) {
+    if (!dayData || dayData.length === 0 || !layout) return null;
+
+    const now = new Date();
+    // Aktuelle Stunde als Dezimalzahl (z.B. 13.5 für 13:30 Uhr)
+    const nowHour = now.getHours() + now.getMinutes() / 60;
+
+    // Stundenwert auf den verfügbaren Datenbereich begrenzen
+    const clampedHour = Math.max(0, Math.min(layout.n - 1, nowHour));
+
+    // X-Position: lineares Mapping Stunde → SVG-Pixel
+    const nowX = layout.padL + (layout.plotW / (layout.n - 1)) * clampedHour;
+
+    // Y-Position: lineare Interpolation zwischen zwei benachbarten Stundenwerten.
+    // floorIdx maximal n-2, damit [floorIdx + 1] immer gültig ist.
+    const floorIdx = Math.min(Math.floor(clampedHour), layout.n - 2);
+    const frac = clampedHour - floorIdx;
+    const rainAtNow = dayData[floorIdx].rainProbability
+        + (dayData[floorIdx + 1].rainProbability - dayData[floorIdx].rainProbability) * frac;
+    const nowY = layout.padT + layout.plotH - (rainAtNow / 100) * layout.plotH;
+
+    // Breite des Vergangen-Bereichs: von linker Plot-Kante bis zur Jetzt-Position
+    const pastWidth = Math.max(0, nowX - layout.padL);
+
+    return { nowX: nowX, nowY: nowY, pastWidth: pastWidth };
+}
+
+// ----------------------------------------
 // Funktion: mapWeatherCodeToSkyVariant
 // Verantwortlichkeit: Übersetzt WMO Weather Code + isDarkMode in Sky-Asset-Variante.
 // Verändert: Nichts (pure Funktion)
@@ -1092,14 +1128,51 @@ function updateDayRainGraph(dayData) {
     function xPos(i) { return padL + (plotW / (n - 1)) * i; }
     function yPos(val) { return padT + plotH - (val / 100) * plotH; }
 
+    // Jetzt-Position einmalig vorab berechnen.
+    // Wird in defs (clipPath), Pfad-Attributen UND Indikator-Elementen genutzt.
+    // null wenn nicht Heute → alle abhängigen Blöcke prüfen einfach auf "if (nowPos)".
+    const nowPos = (state.selectedDayIndex === 0)
+        ? calcNowRainPosition(dayData, { padL: padL, padR: padR, padT: padT, padB: padB, plotW: plotW, plotH: plotH, n: n })
+        : null;
+
     const frag = document.createDocumentFragment();
 
-    // Gradient-Definition
+    // Gradient-Definition + Schraffur-Pattern für Vergangen-Bereich
     const defs = _svgEl('defs', {});
+
+    // Verlauf für die Fläche unter der Linie
     const grad = _svgEl('linearGradient', { id: 'rainAreaGrad', x1: '0', y1: '0', x2: '0', y2: '1' });
     grad.appendChild(_svgEl('stop', { offset: '0%', 'stop-color': '#38bdf8', 'stop-opacity': '0.20' }));
     grad.appendChild(_svgEl('stop', { offset: '100%', 'stop-color': '#38bdf8', 'stop-opacity': '0.05' }));
     defs.appendChild(grad);
+
+    // Diagonales Schraffur-Muster für den Vergangen-Bereich (Apple-style).
+    // patternTransform="rotate(45)" dreht horizontale Linien auf 45° → "\" Richtung.
+    const hatch = _svgEl('pattern', {
+        id: 'nowHatchPattern', width: '7', height: '7',
+        patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)'
+    });
+    hatch.appendChild(_svgEl('line', {
+        x1: '0', y1: '0', x2: '0', y2: '7',
+        stroke: 'rgba(255,255,255,0.13)', 'stroke-width': '1.5'
+    }));
+    defs.appendChild(hatch);
+
+    // ClipPath: begrenzt Fläche und Linie auf den Zukunfts-Bereich (rechts der Jetzt-Linie).
+    // Das <rect data-now-clip-rect> kann updateNowIndicator() live verschieben – kein Neuzeichnen nötig.
+    if (nowPos) {
+        const futureClip = _svgEl('clipPath', { id: 'nowFutureClip' });
+        futureClip.appendChild(_svgEl('rect', {
+            'data-now-clip-rect': '1',
+            x: nowPos.nowX.toFixed(1),
+            y: (padT - 5).toString(),
+            // 330 > SVG-Breite (320) → der rechte Rand wird niemals abgeschnitten
+            width: (330 - nowPos.nowX).toFixed(1),
+            height: (plotH + 10).toString()
+        }));
+        defs.appendChild(futureClip);
+    }
+
     frag.appendChild(defs);
 
     // Horizontale Grid-Lines bei 0%, 20%, 40%, 60%, 80%, 100%
@@ -1133,17 +1206,70 @@ function updateDayRainGraph(dayData) {
     areaPath += 'L' + xPos(n - 1).toFixed(1) + ',' + yPos(0).toFixed(1);
     areaPath += 'L' + xPos(0).toFixed(1) + ',' + yPos(0).toFixed(1) + 'Z';
 
-    // Gefüllte Fläche
-    frag.appendChild(_svgEl('path', {
-        d: areaPath, fill: 'url(#rainAreaGrad)'
-    }));
+    // Gefüllte Fläche – bei Heute nur Zukunfts-Bereich sichtbar (clip-path)
+    const areaAttrs = { d: areaPath, fill: 'url(#rainAreaGrad)' };
+    if (nowPos) areaAttrs['clip-path'] = 'url(#nowFutureClip)';
+    frag.appendChild(_svgEl('path', areaAttrs));
 
-    // Linie
-    frag.appendChild(_svgEl('path', {
+    // Linie – bei Heute nur Zukunfts-Bereich sichtbar (clip-path)
+    const lineAttrs = {
         d: linePath, fill: 'none', stroke: '#38bdf8',
         'stroke-width': '1.5', 'stroke-linecap': 'round', 'stroke-linejoin': 'round',
         'stroke-opacity': '0.7', class: 'graph-line'
-    }));
+    };
+    if (nowPos) lineAttrs['clip-path'] = 'url(#nowFutureClip)';
+    frag.appendChild(_svgEl('path', lineAttrs));
+
+    // ----------------------------------------
+    // NOW INDICATOR – nur für Heute (nowPos ist bereits oben berechnet, null für andere Tage)
+    // Zeichnet: dunkler Unterton + Schraffur (Vergangenheit), gestrichelte Jetzt-Linie, Jetzt-Punkt.
+    // Alle Elemente tragen data-now-* Attribute → updateNowIndicator() kann sie ohne Neuzeichnen verschieben.
+    // ----------------------------------------
+    if (nowPos) {
+        // 1. Dunkler Unterton: dimmt den gesamten Vergangen-Bereich dezent ab
+        frag.appendChild(_svgEl('rect', {
+            'data-now-past-bg': '1',
+            x: padL.toString(), y: padT.toString(),
+            width: nowPos.pastWidth.toFixed(1), height: plotH.toString(),
+            fill: 'rgba(0,0,0,0.22)',
+            style: 'pointer-events:none'
+        }));
+
+        // 2. Schraffur-Overlay: erzeugt Apple-typisches Diagonal-Muster über dem Vergangen-Bereich
+        frag.appendChild(_svgEl('rect', {
+            'data-now-past': '1',
+            x: padL.toString(), y: padT.toString(),
+            width: nowPos.pastWidth.toFixed(1), height: plotH.toString(),
+            fill: 'url(#nowHatchPattern)',
+            style: 'pointer-events:none'
+        }));
+
+        // 3. Vertikale gestrichelte Jetzt-Linie
+        frag.appendChild(_svgEl('line', {
+            'data-now-line': '1',
+            x1: nowPos.nowX.toFixed(1), y1: padT.toString(),
+            x2: nowPos.nowX.toFixed(1), y2: (padT + plotH).toString(),
+            stroke: 'rgba(255,255,255,0.40)',
+            'stroke-width': '1', 'stroke-dasharray': '3,3',
+            style: 'pointer-events:none'
+        }));
+
+        // 4. Leuchtring (Glow-Halo) um den Jetzt-Punkt
+        frag.appendChild(_svgEl('circle', {
+            'data-now-glow': '1',
+            cx: nowPos.nowX.toFixed(1), cy: nowPos.nowY.toFixed(1), r: '8',
+            fill: 'rgba(255,255,255,0.18)',
+            style: 'pointer-events:none'
+        }));
+
+        // 5. Jetzt-Punkt (solid weiß, sitzt auf der Graphlinie)
+        frag.appendChild(_svgEl('circle', {
+            'data-now-dot': '1',
+            cx: nowPos.nowX.toFixed(1), cy: nowPos.nowY.toFixed(1), r: '4',
+            fill: 'white',
+            style: 'pointer-events:none'
+        }));
+    }
 
     // X-Achsen-Labels: 00, 06, 12, 18
     const xLabels = [0, 6, 12, 18];
@@ -1164,6 +1290,60 @@ function updateDayRainGraph(dayData) {
 
     // Layout-Daten für Graph-Interaktion speichern
     _dayRainLayout = { padL: padL, padR: padR, padT: padT, padB: padB, plotW: plotW, plotH: plotH, n: n };
+}
+
+// ----------------------------------------
+// Funktion: updateNowIndicator
+// Verantwortlichkeit: Aktualisiert Position der "Jetzt"-Markierung im Regen-Graphen.
+// Verändert: DOM (SVG-Attribute der [data-now-*]-Elemente in day-rain-graph)
+// Verändert NICHT: state
+// Architektur-Hinweis: Kein Layout-Thrashing – ausschließlich setAttribute, kein getBoundingClientRect.
+//   Wird aufgerufen von: setInterval (jede Minute), window resize, und nach Graphaufbau.
+// ----------------------------------------
+function updateNowIndicator() {
+    // Nur aktiv wenn Sheet offen und Heute angezeigt wird
+    if (state.selectedDayIndex !== 0 || !_currentDayData.length || !_dayRainLayout) return;
+
+    const pos = calcNowRainPosition(_currentDayData, _dayRainLayout);
+    if (!pos) return;
+
+    const svg = $.dayRainGraph;
+
+    // Elemente über data-Attribute finden – kein teures querySelector mit Klassen
+    const pastBg   = svg.querySelector('[data-now-past-bg]');
+    const pastRect = svg.querySelector('[data-now-past]');
+    const nowLine  = svg.querySelector('[data-now-line]');
+    const nowGlow  = svg.querySelector('[data-now-glow]');
+    const nowDot   = svg.querySelector('[data-now-dot]');
+
+    // Frühzeitiger Abbruch wenn Elemente noch nicht im DOM (Sheet noch nicht geöffnet)
+    if (!pastBg || !pastRect || !nowLine || !nowGlow || !nowDot) return;
+
+    const w = pos.pastWidth.toFixed(1);
+    const x = pos.nowX.toFixed(1);
+    const y = pos.nowY.toFixed(1);
+
+    // Vergangen-Bereich: Breite der beiden Overlay-Rechtecke nachführen
+    pastBg.setAttribute('width', w);
+    pastRect.setAttribute('width', w);
+
+    // Jetzt-Linie: X-Position aktualisieren (beide Endpunkte)
+    nowLine.setAttribute('x1', x);
+    nowLine.setAttribute('x2', x);
+
+    // Jetzt-Punkt + Leuchtring: X- und Y-Position aktualisieren
+    nowGlow.setAttribute('cx', x);
+    nowGlow.setAttribute('cy', y);
+    nowDot.setAttribute('cx', x);
+    nowDot.setAttribute('cy', y);
+
+    // ClipPath-Rect: Zukunfts-Clip mit der Jetzt-Linie synchron halten.
+    // 330 > SVG-Breite (320) → rechter Rand niemals abgeschnitten.
+    const clipRect = svg.querySelector('[data-now-clip-rect]');
+    if (clipRect) {
+        clipRect.setAttribute('x', x);
+        clipRect.setAttribute('width', (330 - pos.nowX).toFixed(1));
+    }
 }
 
 
@@ -1609,6 +1789,11 @@ function bindEvents() {
     $.dayRainGraph.addEventListener('pointerleave', function handleRainLeave() {
         handleDayGraphLeave($.dayRainGraph);
     });
+
+    // Jetzt-Indikator bei Fenstergrößenänderung neu positionieren.
+    // Das SVG skaliert per viewBox – die SVG-Koordinaten bleiben konstant,
+    // aber der Indikator muss optisch neu ausgerichtet werden wenn das Layout wechselt.
+    window.addEventListener('resize', updateNowIndicator);
 }
 
 // ----------------------------------------
@@ -1624,6 +1809,10 @@ function init() {
     state.isLoading = true;      // 3. State initialisieren
     updateUI();                  // 4. UI aktualisieren
     detectLocation();            // 5. Side-Effects starten
+
+    // Jetzt-Indikator jede Minute aktualisieren – die Zeit schreitet voran,
+    // Position und Vergangen-Bereich müssen nachgeführt werden.
+    setInterval(updateNowIndicator, 60000);
 }
 
 init();
